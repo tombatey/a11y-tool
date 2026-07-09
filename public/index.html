@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>A11y Scanner — WebDepend</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  :root {
+    --ink: #16191c;
+    --paper: #fafaf8;
+    --line: #e2e1dc;
+    --muted: #6b6f73;
+    --accent: #2f5d50;
+    --critical: #8c2f2f;
+    --serious: #b5611c;
+    --moderate: #8a7a1e;
+    --minor: #5b6470;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    background: var(--paper);
+    color: var(--ink);
+  }
+  header {
+    padding: 32px 32px 24px;
+    border-bottom: 1px solid var(--line);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  header h1 {
+    margin: 0 0 4px;
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+  }
+  header p { margin: 0; color: var(--muted); font-size: 13px; }
+  .header-right { display: flex; align-items: center; gap: 16px; }
+  .header-link { font-size: 13px; color: var(--muted); text-decoration: none; }
+  .header-link:hover { color: var(--ink); }
+  .header-user { font-size: 12px; color: var(--muted); }
+  .logout-btn {
+    padding: 6px 12px; border: 1px solid var(--line); border-radius: 6px;
+    background: none; cursor: pointer; font-size: 12px; color: var(--muted);
+    font-family: inherit;
+  }
+  .logout-btn:hover { border-color: var(--ink); color: var(--ink); }
+
+  main { max-width: 1040px; margin: 0 auto; padding: 32px 32px 80px; }
+
+  .panel {
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 24px;
+    margin-bottom: 24px;
+  }
+  .panel h2 { margin: 0 0 16px; font-size: 14px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+
+  .mode-toggle { display: flex; gap: 8px; margin-bottom: 16px; }
+  .mode-toggle button {
+    flex: 1; padding: 9px; border: 1px solid var(--line); background: #fff; border-radius: 6px;
+    cursor: pointer; font-size: 13px; color: var(--muted);
+  }
+  .mode-toggle button.active { border-color: var(--accent); color: var(--accent); background: #f0f5f3; font-weight: 600; }
+
+  label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; margin-top: 16px; }
+  label:first-child { margin-top: 0; }
+  input[type=text], textarea {
+    width: 100%; padding: 9px 10px; border: 1px solid var(--line); border-radius: 6px; font-size: 13px;
+    font-family: inherit; background: var(--paper);
+  }
+  textarea { min-height: 90px; resize: vertical; }
+  .row { display: flex; gap: 16px; margin-top: 16px; }
+  .row > div { flex: 1; }
+  .row > div label { margin-top: 0; }
+
+  button.primary {
+    margin-top: 16px; padding: 10px 18px; background: var(--ink); color: #fff; border: none;
+    border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600;
+  }
+  button.primary:disabled { opacity: 0.5; cursor: default; }
+
+  .status-line { display: flex; align-items: center; gap: 10px; margin-top: 16px; font-size: 13px; color: var(--muted); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+  .dot.pulse { animation: pulse 1.2s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+  .stop-btn {
+    margin-left: auto; padding: 4px 12px; background: none;
+    border: 1px solid var(--line); border-radius: 6px;
+    cursor: pointer; font-size: 12px; color: var(--muted);
+    transition: border-color 0.15s, color 0.15s;
+  }
+  .stop-btn:hover { border-color: var(--critical); color: var(--critical); }
+
+  button.primary {
+    margin-top: 18px; padding: 10px 18px; background: var(--ink); color: #fff; border: none;
+    border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600;
+  }
+  button.primary:disabled { opacity: 0.5; cursor: default; }
+
+  .status-line { display: flex; align-items: center; gap: 10px; margin-top: 16px; font-size: 13px; color: var(--muted); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+  .dot.pulse { animation: pulse 1.2s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); color: var(--muted); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; }
+  td { padding: 9px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 99px; font-size: 11px; font-weight: 600; color: #fff; }
+  .badge.critical { background: var(--critical); }
+  .badge.serious { background: var(--serious); }
+  .badge.moderate { background: var(--moderate); }
+  .badge.minor { background: var(--minor); }
+
+  .url-cell { max-width: 260px; word-break: break-all; color: var(--accent); }
+  .selector-cell { max-width: 220px; word-break: break-all; font-family: ui-monospace, SFMono-Regular, monospace; font-size: 11px; color: var(--muted); }
+
+  .summary-grid { display: flex; gap: 16px; margin-bottom: 16px; flex-wrap: wrap; }
+  .summary-card { border: 1px solid var(--line); border-radius: 8px; padding: 16px; min-width: 110px; }
+  .summary-card .num { font-size: 22px; font-weight: 700; }
+  .summary-card .label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+
+  .empty { color: var(--muted); font-size: 13px; padding: 18px 4px; }
+
+  .tag-grid { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 0; }
+  .tag-chip {
+    display: flex; align-items: center; gap: 6px;
+    padding: 5px 10px; border: 1px solid var(--line); border-radius: 6px;
+    cursor: pointer; font-size: 12px; color: var(--muted); background: #fff;
+    user-select: none;
+    /* Reset inherited label margins so all chips sit at equal height in the flex row */
+    margin-top: 0; margin-bottom: 0;
+  }
+  .tag-chip input[type=checkbox] { margin: 0; accent-color: var(--accent); cursor: pointer; }
+  .tag-chip.checked { border-color: var(--accent); color: var(--accent); background: #f0f5f3; }
+  .tag-chip .tag-desc { font-size: 11px; color: var(--muted); margin-left: 2px; }
+  .tag-chip.checked .tag-desc { color: var(--accent); opacity: 0.8; }
+  .tag-section-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin: 16px 0 8px; }
+  .divider { border: none; border-top: 1px solid var(--line); margin: 16px 0 0; }
+
+  /* Severity filter cards */
+  .summary-grid { display: flex; gap: 16px; margin-bottom: 16px; flex-wrap: wrap; }
+  .summary-card { border: 1px solid var(--line); border-radius: 8px; padding: 16px; min-width: 110px; }
+  .summary-card .num { font-size: 22px; font-weight: 700; }
+  .summary-card .label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+
+  /* Severity filter cards */
+  .filter-card {
+    cursor: pointer; user-select: none;
+    transition: opacity 0.15s, border-color 0.15s;
+  }
+  .filter-card:hover { border-color: var(--ink); }
+  .filter-card.inactive { opacity: 0.32; }
+  .filter-card .filter-hint {
+    font-size: 9px; color: var(--muted); text-transform: uppercase;
+    letter-spacing: 0.04em; margin-top: 2px; display: block;
+  }
+
+  /* Location column — fixed width, content clips inside */
+  .location-cell { width: 220px; max-width: 220px; overflow: hidden; }
+  .loc-breadcrumb { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; margin-bottom: 5px; overflow: hidden; }
+  .loc-breadcrumb .seg {
+    font-family: ui-monospace, SFMono-Regular, monospace; font-size: 10px;
+    background: var(--paper); border: 1px solid var(--line); padding: 1px 5px;
+    border-radius: 3px; color: var(--muted); white-space: nowrap;
+    max-width: 180px; overflow: hidden; text-overflow: ellipsis; display: inline-block;
+  }
+  .loc-breadcrumb .seg.target { border-color: var(--accent); color: var(--accent); }
+  .loc-breadcrumb .arrow { color: var(--line); font-size: 9px; flex-shrink: 0; }
+  .loc-position { font-size: 11px; color: var(--muted); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .fold-badge {
+    font-size: 10px; font-weight: 600; padding: 1px 6px; border-radius: 99px;
+    background: #e8f0fe; color: #1a5276; white-space: nowrap;
+  }
+  .fold-badge.below { background: #fef9e7; color: #7d6608; }
+  .loc-thumb {
+    display: block; max-width: 100%; max-height: 60px; border: 1px solid var(--line);
+    border-radius: 4px; margin-bottom: 5px; cursor: zoom-in;
+    object-fit: contain; background: var(--paper);
+  }
+
+  /* Lightbox */
+  .lightbox {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7);
+    z-index: 1000; align-items: center; justify-content: center;
+  }
+  .lightbox.open { display: flex; }
+  .lightbox img { max-width: 90vw; max-height: 85vh; border-radius: 6px; box-shadow: 0 8px 40px rgba(0,0,0,0.5); }
+  .lightbox-close {
+    position: fixed; top: 20px; right: 24px; background: none; border: none;
+    color: #fff; font-size: 28px; cursor: pointer; line-height: 1;
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="header-left">
+    <h1>Accessibility Scanner</h1>
+    <p>axe-core crawl &amp; scan — internal tool</p>
+  </div>
+  <div class="header-right">
+    <a href="/history.html" class="header-link">History</a>
+    <a href="/team.html" class="header-link">Team</a>
+    <span id="headerUser" class="header-user"></span>
+    <form action="/auth/logout" method="post" style="margin:0">
+      <button class="logout-btn" type="submit">Sign out</button>
+    </form>
+  </div>
+</header>
+
+<main>
+  <section class="panel">
+    <h2>New scan</h2>
+    <div class="mode-toggle">
+      <button id="modeCrawlBtn" class="active">Crawl a site</button>
+      <button id="modeListBtn">Scan a URL list</button>
+    </div>
+
+    <div id="crawlFields">
+      <label for="rootUrl">Site root URL</label>
+      <input type="text" id="rootUrl" placeholder="https://example.com" />
+      <div class="row">
+        <div>
+          <label for="maxPages">Max pages</label>
+          <input type="text" id="maxPages" value="50" />
+        </div>
+        <div>
+          <label for="maxDepth">Max depth</label>
+          <input type="text" id="maxDepth" value="3" />
+        </div>
+      </div>
+    </div>
+
+    <div id="listFields" style="display:none;">
+      <label for="urlList">URLs (one per line)</label>
+      <textarea id="urlList" placeholder="https://example.com/page-1&#10;https://example.com/page-2"></textarea>
+    </div>
+
+    <hr class="divider" />
+
+    <div class="tag-section-label">WCAG compliance level</div>
+    <div class="tag-grid" id="tagGrid">
+      <label class="tag-chip checked">
+        <input type="checkbox" value="wcag2a" checked /> wcag2a <span class="tag-desc">2.0 Level A</span>
+      </label>
+      <label class="tag-chip checked">
+        <input type="checkbox" value="wcag2aa" checked /> wcag2aa <span class="tag-desc">2.0 Level AA</span>
+      </label>
+      <label class="tag-chip checked">
+        <input type="checkbox" value="wcag21aa" checked /> wcag21aa <span class="tag-desc">2.1 Level AA</span>
+      </label>
+      <label class="tag-chip">
+        <input type="checkbox" value="wcag22aa" /> wcag22aa <span class="tag-desc">2.2 Level AA</span>
+      </label>
+      <label class="tag-chip">
+        <input type="checkbox" value="wcag2aaa" /> wcag2aaa <span class="tag-desc">2.0 Level AAA</span>
+      </label>
+    </div>
+
+    <div class="tag-section-label">Additional checks</div>
+    <div class="tag-grid">
+      <label class="tag-chip">
+        <input type="checkbox" value="best-practice" /> best-practice <span class="tag-desc">Axe best practices</span>
+      </label>
+      <label class="tag-chip">
+        <input type="checkbox" value="experimental" /> experimental <span class="tag-desc">Axe experimental rules</span>
+      </label>
+    </div>
+
+    <div class="tag-section-label">Options</div>
+    <div class="tag-grid">
+      <label class="tag-chip" id="screenshotChip">
+        <input type="checkbox" id="captureScreenshots" />
+        Capture element screenshots
+        <span class="tag-desc">slower — recommended for URL list scans</span>
+      </label>
+    </div>
+
+    <button class="primary" id="startBtn">Start scan</button>
+
+    <div class="status-line" id="statusLine" style="display:none;">
+      <span class="dot pulse"></span>
+      <span id="statusText">Queued…</span>
+      <button class="stop-btn" id="stopBtn" style="display:none;" onclick="stopScan()">Stop scan</button>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Results</h2>
+    <div id="resultsArea">
+      <div class="empty">No scan run yet.</div>
+    </div>
+  </section>
+</main>
+
+<div class="lightbox" id="lightbox" onclick="closeLightbox()">
+  <button class="lightbox-close" onclick="closeLightbox()">&times;</button>
+  <img id="lightboxImg" src="" alt="Element screenshot" onclick="event.stopPropagation()" />
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,156 @@
+require('dotenv').config();
+const express      = require('express');
+const path         = require('path');
+const session      = require('express-session');
+const pgSession    = require('connect-pg-simple')(session);
+const pool         = require('./db');
+const { passport, requireAuth } = require('./auth');
+const { createJob, getJob, listJobs, requestStop } = require('./jobStore');
+const { runJob }   = require('./orchestrator');
+
+const app      = express();
+const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '..', 'data');
+const APP_URL  = process.env.APP_URL  || 'http://localhost:3000';
+
+// Trust Caddy/nginx proxy so secure cookies work over HTTPS
+app.set('trust proxy', 1);
+app.use(express.json());
+
+// ─── Session ──────────────────────────────────────────────────────────────────
+app.use(session({
+  store: new pgSession({ pool, tableName: 'session', createTableIfMissing: false }),
+  secret:            process.env.SESSION_SECRET || 'change-me-in-production',
+  resave:            false,
+  saveUninitialized: false,
+  cookie: {
+    maxAge:   30 * 24 * 60 * 60 * 1000, // 30 days
+    secure:   APP_URL.startsWith('https'),
+    httpOnly: true,
+    sameSite: 'lax',
+  },
+}));
+
+app.use(passport.initialize());
+app.use(passport.session());
+
+// ─── Auth routes (public) ─────────────────────────────────────────────────────
+app.get('/login', (_req, res) => {
+  res.sendFile(path.join(__dirname, '..', 'public', 'login.html'));
+});
+
+app.get('/auth/google',
+  passport.authenticate('google', { scope: ['profile', 'email'] })
+);
+
+app.get('/auth/google/callback',
+  passport.authenticate('google', { failureRedirect: '/login?error=unauthorised' }),
+  (_req, res) => res.redirect('/')
+);
+
+app.post('/auth/logout', (req, res, next) => {
+  req.logout((err) => {
+    if (err) return next(err);
+    res.redirect('/login');
+  });
+});
+
+// ─── Static files — login page is public, everything else protected ───────────
+app.use('/login.html', express.static(path.join(__dirname, '..', 'public')));
+app.use(requireAuth);
+app.use(express.static(path.join(__dirname, '..', 'public')));
+
+// ─── Health check ─────────────────────────────────────────────────────────────
+app.get('/health', async (_req, res) => {
+  try {
+    await pool.query('SELECT 1');
+    res.json({ ok: true, db: 'connected' });
+  } catch {
+    res.status(503).json({ ok: false, db: 'unavailable' });
+  }
+});
+
+// ─── Screenshot serving ───────────────────────────────────────────────────────
+app.use('/api/screenshots', express.static(path.join(DATA_DIR, 'screenshots')));
+
+// ─── Current user ─────────────────────────────────────────────────────────────
+app.get('/api/me', (req, res) => {
+  res.json({ email: req.user.email, name: req.user.name });
+});
+
+// ─── Team management ──────────────────────────────────────────────────────────
+app.get('/api/users', async (_req, res) => {
+  const result = await pool.query(
+    'SELECT id, email, name, created_at, last_login FROM users ORDER BY created_at'
+  );
+  res.json(result.rows);
+});
+
+app.post('/api/users', async (req, res) => {
+  const { email, name } = req.body || {};
+  if (!email) return res.status(400).json({ error: 'email is required' });
+  try {
+    const result = await pool.query(
+      `INSERT INTO users (email, name) VALUES ($1, $2)
+       ON CONFLICT (email) DO UPDATE SET name = EXCLUDED.name
+       RETURNING id, email, name, created_at`,
+      [email.toLowerCase().trim(), name?.trim() || null]
+    );
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/users/:id', async (req, res) => {
+  await pool.query('DELETE FROM users WHERE id = $1', [req.params.id]);
+  res.json({ ok: true });
+});
+
+// ─── Scan API ─────────────────────────────────────────────────────────────────
+app.post('/api/scan', async (req, res) => {
+  const { mode, rootUrl, urls, options } = req.body || {};
+  if (mode === 'crawl' && !rootUrl)
+    return res.status(400).json({ error: 'rootUrl is required for crawl mode' });
+  if (mode === 'list' && (!Array.isArray(urls) || urls.length === 0))
+    return res.status(400).json({ error: 'urls array is required for list mode' });
+  if (!['crawl', 'list'].includes(mode))
+    return res.status(400).json({ error: "mode must be 'crawl' or 'list'" });
+
+  const job = await createJob({ mode, rootUrl, urls, options });
+  runJob(job).catch((err) => console.error(`Job ${job.id} failed:`, err));
+  res.status(202).json({ jobId: job.id });
+});
+
+app.get('/api/scan/:id', async (req, res) => {
+  const job = await getJob(req.params.id);
+  if (!job) return res.status(404).json({ error: 'Job not found' });
+  res.json(job);
+});
+
+app.post('/api/scan/:id/stop', async (req, res) => {
+  const job = await getJob(req.params.id);
+  if (!job) return res.status(404).json({ error: 'Job not found' });
+  if (!['queued', 'crawling', 'scanning'].includes(job.status))
+    return res.status(400).json({ error: `Cannot stop a job with status: ${job.status}` });
+  await requestStop(req.params.id);
+  res.json({ ok: true });
+});
+
+app.get('/api/scans', async (_req, res) => {
+  const jobs = await listJobs();
+  res.json(jobs);
+});
+
+// ─── Start ────────────────────────────────────────────────────────────────────
+const PORT   = process.env.PORT || 3000;
+const server = app.listen(PORT, () => {
+  console.log(`a11y-tool listening on ${APP_URL}`);
+});
+
+async function shutdown(signal) {
+  console.log(`${signal} received — shutting down gracefully`);
+  server.close(async () => { await pool.end(); process.exit(0); });
+  setTimeout(() => process.exit(1), 10000);
+}
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT',  () => shutdown('SIGINT'));

@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Team — A11y Scanner</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  :root {
+    --ink: #16191c; --paper: #fafaf8; --line: #e2e1dc;
+    --muted: #6b6f73; --accent: #2f5d50; --critical: #8c2f2f;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; background: var(--paper); color: var(--ink); }
+  header { padding: 32px 32px 24px; border-bottom: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; }
+  header h1 { margin: 0 0 4px; font-size: 20px; font-weight: 700; letter-spacing: -0.01em; }
+  header p { margin: 0; color: var(--muted); font-size: 13px; }
+  .header-right { display: flex; align-items: center; gap: 16px; }
+  .header-link { font-size: 13px; color: var(--muted); text-decoration: none; }
+  .header-link:hover { color: var(--ink); }
+  .header-user { font-size: 12px; color: var(--muted); }
+  .logout-btn { padding: 6px 12px; border: 1px solid var(--line); border-radius: 6px; background: none; cursor: pointer; font-size: 12px; color: var(--muted); font-family: inherit; }
+  .logout-btn:hover { border-color: var(--ink); color: var(--ink); }
+  main { max-width: 640px; margin: 0 auto; padding: 32px 32px 80px; }
+  .panel { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 24px; margin-bottom: 24px; }
+  .panel h2 { margin: 0 0 16px; font-size: 14px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+  label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; margin-top: 16px; }
+  label:first-of-type { margin-top: 0; }
+  input[type=text], input[type=email] { width: 100%; padding: 9px 10px; border: 1px solid var(--line); border-radius: 6px; font-size: 13px; font-family: inherit; background: var(--paper); }
+  button.primary { margin-top: 16px; padding: 10px 18px; background: var(--ink); color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600; }
+  button.primary:disabled { opacity: 0.5; cursor: default; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); color: var(--muted); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; }
+  td { padding: 10px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+  tr:last-child td { border-bottom: none; }
+  .remove-btn { padding: 4px 10px; border: 1px solid var(--line); border-radius: 5px; background: none; cursor: pointer; font-size: 11px; color: var(--muted); }
+  .remove-btn:hover { border-color: var(--critical); color: var(--critical); }
+  .empty { color: var(--muted); font-size: 13px; padding: 16px 0; }
+  .you-badge { font-size: 10px; background: #f0f5f3; color: var(--accent); border: 1px solid var(--accent); padding: 1px 6px; border-radius: 99px; margin-left: 6px; font-weight: 500; }
+  .last-login { font-size: 11px; color: var(--muted); }
+  .msg { margin-top: 12px; font-size: 12px; padding: 8px 12px; border-radius: 6px; }
+  .msg.ok  { background: #f0f5f3; color: var(--accent); }
+  .msg.err { background: #fdf2f2; color: var(--critical); }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>Team</h1>
+    <p>Manage who can access the Accessibility Scanner</p>
+  </div>
+  <div class="header-right">
+    <a href="/" class="header-link">Scanner</a>
+    <a href="/history.html" class="header-link">History</a>
+    <span id="headerUser" class="header-user"></span>
+    <form action="/auth/logout" method="post" style="margin:0">
+      <button class="logout-btn" type="submit">Sign out</button>
+    </form>
+  </div>
+</header>
+
+<main>
+  <section class="panel">
+    <h2>Add team member</h2>
+    <label for="addEmail">Google Workspace email</label>
+    <input type="email" id="addEmail" placeholder="name@webdepend.co.uk" />
+    <label for="addName">Name</label>
+    <input type="text" id="addName" placeholder="Full name" />
+    <button class="primary" id="addBtn" onclick="addUser()">Add team member</button>
+    <div id="addMsg" style="display:none" class="msg"></div>
+  </section>
+
+  <section class="panel">
+    <h2>Current team</h2>
+    <div id="userList"><div class="empty">Loading…</div></div>
+  </section>
+</main>
+
+<script>
+let currentUserEmail = '';
+
+fetch('/api/me')
+  .then(r => { if (r.status === 401) window.location.href = '/login'; return r.json(); })
+  .then(user => {
+    currentUserEmail = user.email;
+    document.getElementById('headerUser').textContent = user.name || user.email;
+    loadUsers();
+  });
+
+async function loadUsers() {
+  const res = await fetch('/api/users');
+  const users = await res.json();
+  const el = document.getElementById('userList');
+  if (!users.length) { el.innerHTML = '<div class="empty">No team members yet.</div>'; return; }
+
+  const rows = users.map(u => {
+    const isYou = u.email === currentUserEmail;
+    const lastLogin = u.last_login
+      ? new Date(u.last_login).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+      : 'Never';
+    return `<tr>
+      <td>
+        ${escHtml(u.name || '—')}
+        ${isYou ? '<span class="you-badge">you</span>' : ''}
+        <div class="last-login">${escHtml(u.email)}</div>
+      </td>
+      <td class="last-login">Last login: ${lastLogin}</td>
+      <td style="text-align:right">
+        ${isYou ? '' : `<button class="remove-btn" onclick="removeUser(${u.id}, '${escHtml(u.email)}')">Remove</button>`}
+      </td>
+    </tr>`;
+  }).join('');
+
+  el.innerHTML = `<table><thead><tr><th>Name / Email</th><th></th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+async function addUser() {
+  const email = document.getElementById('addEmail').value.trim();
+  const name  = document.getElementById('addName').value.trim();
+  const msg   = document.getElementById('addMsg');
+  if (!email) { showMsg(msg, 'Email is required.', 'err'); return; }
+
+  const res = await fetch('/api/users', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, name }),
+  });
+
+  if (res.ok) {
+    document.getElementById('addEmail').value = '';
+    document.getElementById('addName').value  = '';
+    showMsg(msg, `${email} added successfully.`, 'ok');
+    loadUsers();
+  } else {
+    const err = await res.json().catch(() => ({}));
+    showMsg(msg, err.error || 'Failed to add user.', 'err');
+  }
+}
+
+async function removeUser(id, email) {
+  if (!confirm(`Remove ${email}? They will immediately lose access.`)) return;
+  await fetch(`/api/users/${id}`, { method: 'DELETE' });
+  loadUsers();
+}
+
+function showMsg(el, text, type) {
+  el.textContent = text;
+  el.className = `msg ${type}`;
+  el.style.display = 'block';
+  setTimeout(() => { el.style.display = 'none'; }, 4000);
+}
+
+function escHtml(str) {
+  return String(str ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+</script>
+</body>
+</html>

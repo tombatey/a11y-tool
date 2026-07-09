@@ -1,0 +1,412 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Scan History — A11y Scanner</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  :root {
+    --ink: #16191c; --paper: #fafaf8; --line: #e2e1dc; --muted: #6b6f73;
+    --accent: #2f5d50; --critical: #8c2f2f; --serious: #b5611c;
+    --moderate: #8a7a1e; --minor: #5b6470;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; background: var(--paper); color: var(--ink); }
+
+  /* ── Header ── */
+  header { padding: 32px 32px 24px; border-bottom: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; }
+  .header-left h1 { margin: 0 0 4px; font-size: 20px; font-weight: 700; letter-spacing: -0.01em; }
+  .header-left p { margin: 0; color: var(--muted); font-size: 13px; }
+  .header-right { display: flex; align-items: center; gap: 16px; }
+  .header-link { font-size: 13px; color: var(--muted); text-decoration: none; }
+  .header-link:hover { color: var(--ink); }
+  .header-link.active { color: var(--ink); font-weight: 500; }
+  .header-user { font-size: 12px; color: var(--muted); }
+  .logout-btn { padding: 6px 12px; border: 1px solid var(--line); border-radius: 6px; background: none; cursor: pointer; font-size: 12px; color: var(--muted); font-family: inherit; }
+  .logout-btn:hover { border-color: var(--ink); color: var(--ink); }
+
+  main { max-width: 1040px; margin: 0 auto; padding: 32px 32px 80px; }
+
+  /* ── List view ── */
+  .list-header { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 16px; }
+  .list-header h2 { margin: 0; font-size: 18px; font-weight: 700; letter-spacing: -0.01em; }
+  .list-header p { margin: 0; font-size: 13px; color: var(--muted); }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--line); color: var(--muted); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; white-space: nowrap; }
+  td { padding: 12px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+  tr:last-child td { border-bottom: none; }
+  tbody tr:hover td { background: #f7f7f5; }
+
+  .scan-date { font-size: 12px; color: var(--muted); white-space: nowrap; }
+  .scan-date strong { display: block; font-size: 13px; color: var(--ink); font-weight: 500; margin-bottom: 1px; }
+  .scan-target { max-width: 260px; }
+  .scan-target .url { font-size: 12px; color: var(--accent); word-break: break-all; }
+  .scan-target .mode-chip { display: inline-block; font-size: 10px; font-weight: 600; padding: 1px 6px; border-radius: 4px; margin-bottom: 3px; }
+  .mode-chip.crawl { background: #e6f1fb; color: #185fa5; }
+  .mode-chip.list  { background: #f0ece8; color: #5b3e22; }
+
+  .sev-counts { display: flex; gap: 8px; flex-wrap: wrap; }
+  .sev-count { font-size: 11px; font-weight: 600; }
+  .sev-count.critical { color: var(--critical); }
+  .sev-count.serious  { color: var(--serious); }
+  .sev-count.moderate { color: var(--moderate); }
+  .sev-count.minor    { color: var(--minor); }
+  .sev-count.zero     { color: var(--line); }
+
+  .status-badge { display: inline-block; padding: 2px 8px; border-radius: 99px; font-size: 11px; font-weight: 600; }
+  .status-badge.done     { background: #e1f5ee; color: #0f6e56; }
+  .status-badge.stopped  { background: #fef9e7; color: #7d6608; }
+  .status-badge.error    { background: #fdf2f2; color: var(--critical); }
+  .status-badge.scanning, .status-badge.crawling, .status-badge.queued { background: #e6f1fb; color: #185fa5; }
+
+  .view-btn { padding: 5px 12px; border: 1px solid var(--line); border-radius: 6px; background: none; cursor: pointer; font-size: 12px; color: var(--muted); white-space: nowrap; }
+  .view-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+  .empty { color: var(--muted); font-size: 13px; padding: 32px 0; text-align: center; }
+
+  /* ── Detail view ── */
+  #detailView { display: none; }
+  .back-btn { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); background: none; border: none; cursor: pointer; padding: 0; margin-bottom: 24px; }
+  .back-btn:hover { color: var(--ink); }
+
+  .scan-meta { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 20px 24px; margin-bottom: 24px; display: flex; gap: 32px; flex-wrap: wrap; align-items: flex-start; }
+  .scan-meta-item { }
+  .scan-meta-item .label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin-bottom: 4px; }
+  .scan-meta-item .value { font-size: 13px; color: var(--ink); font-weight: 500; }
+  .scan-meta-item .value a { color: var(--accent); text-decoration: none; word-break: break-all; }
+  .tag-pills { display: flex; gap: 4px; flex-wrap: wrap; }
+  .tag-pill { font-size: 11px; background: var(--paper); border: 1px solid var(--line); padding: 2px 7px; border-radius: 4px; color: var(--muted); }
+
+  /* Results — same as main app */
+  .summary-grid { display: flex; gap: 16px; margin-bottom: 16px; flex-wrap: wrap; }
+  .summary-card { border: 1px solid var(--line); border-radius: 8px; padding: 16px; min-width: 110px; }
+  .summary-card .num { font-size: 22px; font-weight: 700; }
+  .summary-card .label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+  .filter-card { cursor: pointer; user-select: none; transition: opacity 0.15s, border-color 0.15s; }
+  .filter-card:hover { border-color: var(--ink); }
+  .filter-card.inactive { opacity: 0.32; }
+  .filter-card .filter-hint { font-size: 9px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin-top: 2px; display: block; }
+
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 99px; font-size: 11px; font-weight: 600; color: #fff; }
+  .badge.critical { background: var(--critical); }
+  .badge.serious  { background: var(--serious); }
+  .badge.moderate { background: var(--moderate); }
+  .badge.minor    { background: var(--minor); }
+
+  .url-cell { max-width: 200px; word-break: break-all; color: var(--accent); }
+  .location-cell { width: 220px; max-width: 220px; overflow: hidden; }
+  .loc-breadcrumb { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; margin-bottom: 5px; }
+  .loc-breadcrumb .seg { font-family: ui-monospace, monospace; font-size: 10px; background: var(--paper); border: 1px solid var(--line); padding: 1px 5px; border-radius: 3px; color: var(--muted); white-space: nowrap; max-width: 180px; overflow: hidden; text-overflow: ellipsis; display: inline-block; }
+  .loc-breadcrumb .seg.target { border-color: var(--accent); color: var(--accent); }
+  .loc-breadcrumb .arrow { color: var(--line); font-size: 9px; flex-shrink: 0; }
+  .loc-position { font-size: 11px; color: var(--muted); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .fold-badge { font-size: 10px; font-weight: 600; padding: 1px 6px; border-radius: 99px; background: #e8f0fe; color: #1a5276; white-space: nowrap; }
+  .fold-badge.below { background: #fef9e7; color: #7d6608; }
+  .loc-thumb { display: block; max-width: 100%; max-height: 60px; border: 1px solid var(--line); border-radius: 4px; margin-bottom: 5px; cursor: zoom-in; object-fit: contain; background: var(--paper); }
+
+  .lightbox { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 1000; align-items: center; justify-content: center; }
+  .lightbox.open { display: flex; }
+  .lightbox img { max-width: 90vw; max-height: 85vh; border-radius: 6px; box-shadow: 0 8px 40px rgba(0,0,0,0.5); }
+  .lightbox-close { position: fixed; top: 20px; right: 24px; background: none; border: none; color: #fff; font-size: 28px; cursor: pointer; }
+</style>
+</head>
+<body>
+<header>
+  <div class="header-left">
+    <h1>Scan History</h1>
+    <p>Browse and review past accessibility scans</p>
+  </div>
+  <div class="header-right">
+    <a href="/" class="header-link">Scanner</a>
+    <a href="/history.html" class="header-link active">History</a>
+    <a href="/team.html" class="header-link">Team</a>
+    <span id="headerUser" class="header-user"></span>
+    <form action="/auth/logout" method="post" style="margin:0">
+      <button class="logout-btn" type="submit">Sign out</button>
+    </form>
+  </div>
+</header>
+
+<main>
+  <!-- List view -->
+  <div id="listView">
+    <div class="list-header">
+      <h2>Past scans</h2>
+      <p id="scanCount"></p>
+    </div>
+    <div id="listContent"><div class="empty">Loading…</div></div>
+  </div>
+
+  <!-- Detail view -->
+  <div id="detailView">
+    <button class="back-btn" onclick="backToList()">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M10 12L6 8l4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Back to past scans
+    </button>
+    <div id="scanMeta"></div>
+    <div id="detailResults"><div class="empty">Loading…</div></div>
+  </div>
+</main>
+
+<div class="lightbox" id="lightbox" onclick="closeLightbox()">
+  <button class="lightbox-close" onclick="closeLightbox()">&times;</button>
+  <img id="lightboxImg" src="" alt="Element screenshot" onclick="event.stopPropagation()" />
+</div>
+
+<script>
+let activeFilters = new Set(['critical', 'serious', 'moderate', 'minor']);
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+fetch('/api/me')
+  .then(r => { if (r.status === 401) window.location.href = '/login'; return r.json(); })
+  .then(u => { document.getElementById('headerUser').textContent = u.name || u.email; });
+
+window.addEventListener('DOMContentLoaded', () => {
+  const id = new URLSearchParams(window.location.search).get('id');
+  if (id) viewScan(id); else loadList();
+});
+
+// ── List view ─────────────────────────────────────────────────────────────────
+async function loadList() {
+  document.getElementById('listView').style.display = '';
+  document.getElementById('detailView').style.display = 'none';
+
+  const scans = await fetch('/api/scans').then(r => r.json());
+  const countEl = document.getElementById('scanCount');
+  countEl.textContent = scans.length === 1 ? '1 scan' : `${scans.length} scans`;
+
+  if (!scans.length) {
+    document.getElementById('listContent').innerHTML = '<div class="empty">No scans yet — run one from the Scanner.</div>';
+    return;
+  }
+
+  const rows = scans.map(s => {
+    const input = s.input || {};
+    const modeLabel = input.mode === 'crawl' ? 'Crawl' : 'URL List';
+    const modeClass = input.mode === 'crawl' ? 'crawl' : 'list';
+    const target = input.mode === 'crawl'
+      ? `<div class="url">${escHtml(input.rootUrl || '—')}</div>`
+      : `<div class="url">${input.urls?.length || 0} URL${(input.urls?.length || 0) === 1 ? '' : 's'}</div>`;
+
+    const sc = s.severityCounts || {};
+    const sevHtml = [
+      sc.critical ? `<span class="sev-count critical">●&nbsp;${sc.critical} critical</span>` : '',
+      sc.serious  ? `<span class="sev-count serious">●&nbsp;${sc.serious} serious</span>`   : '',
+      sc.moderate ? `<span class="sev-count moderate">●&nbsp;${sc.moderate} moderate</span>` : '',
+      sc.minor    ? `<span class="sev-count minor">●&nbsp;${sc.minor} minor</span>`          : '',
+    ].filter(Boolean).join('') || '<span class="sev-count zero">None found</span>';
+
+    const { dateStr, timeStr } = formatDate(s.createdAt);
+
+    return `<tr>
+      <td class="scan-date"><strong>${escHtml(dateStr)}</strong>${escHtml(timeStr)}</td>
+      <td class="scan-target">
+        <span class="mode-chip ${modeClass}">${modeLabel}</span>
+        ${target}
+      </td>
+      <td><span class="status-badge ${s.status}">${s.status}</span></td>
+      <td style="white-space:nowrap">${s.pagesScanned} pages</td>
+      <td><div class="sev-counts">${sevHtml}</div></td>
+      <td><button class="view-btn" onclick="viewScan('${s.id}')">View results</button></td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('listContent').innerHTML = `
+    <table>
+      <thead><tr>
+        <th>Date</th><th>Target</th><th>Status</th>
+        <th>Pages</th><th>Findings</th><th></th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+
+// ── Detail view ───────────────────────────────────────────────────────────────
+async function viewScan(id) {
+  activeFilters = new Set(['critical', 'serious', 'moderate', 'minor']);
+  document.getElementById('listView').style.display = 'none';
+  document.getElementById('detailView').style.display = 'block';
+  document.getElementById('scanMeta').innerHTML = '';
+  document.getElementById('detailResults').innerHTML = '<div class="empty">Loading…</div>';
+
+  history.replaceState(null, '', `?id=${id}`);
+
+  const job = await fetch(`/api/scan/${id}`).then(r => r.json());
+  renderMeta(job);
+  renderResults(job);
+}
+
+function backToList() {
+  history.replaceState(null, '', '/history.html');
+  loadList();
+}
+
+function renderMeta(job) {
+  const input = job.input || {};
+  const tags  = input.options?.tags || [];
+  const { dateStr, timeStr } = formatDate(job.createdAt);
+
+  const target = input.mode === 'crawl'
+    ? `<a href="${escHtml(input.rootUrl)}" target="_blank" rel="noopener">${escHtml(input.rootUrl)}</a>`
+    : `${input.urls?.length || 0} URL${(input.urls?.length || 0) === 1 ? '' : 's'}`;
+
+  const tagPills = tags.map(t => `<span class="tag-pill">${escHtml(t)}</span>`).join('');
+
+  document.getElementById('scanMeta').innerHTML = `
+    <div class="scan-meta">
+      <div class="scan-meta-item">
+        <div class="label">Date</div>
+        <div class="value">${escHtml(dateStr)} at ${escHtml(timeStr)}</div>
+      </div>
+      <div class="scan-meta-item">
+        <div class="label">Mode</div>
+        <div class="value">${input.mode === 'crawl' ? 'Crawl' : 'URL List'}</div>
+      </div>
+      <div class="scan-meta-item" style="flex:1; min-width:200px">
+        <div class="label">Target</div>
+        <div class="value">${target}</div>
+      </div>
+      <div class="scan-meta-item">
+        <div class="label">Status</div>
+        <div class="value"><span class="status-badge ${job.status}">${job.status}</span></div>
+      </div>
+      ${tags.length ? `<div class="scan-meta-item"><div class="label">Tags</div><div class="tag-pills">${tagPills}</div></div>` : ''}
+    </div>`;
+}
+
+function renderResults(job) {
+  const el = document.getElementById('detailResults');
+  if (!job.findings?.length) {
+    el.innerHTML = '<div class="empty">No accessibility violations found in this scan.</div>';
+    return;
+  }
+
+  const counts = { critical: 0, serious: 0, moderate: 0, minor: 0 };
+  job.findings.forEach(f => { if (counts[f.impact] !== undefined) counts[f.impact]++; });
+
+  const summaryHtml = `
+    <div class="summary-grid">
+      <div class="summary-card"><div class="num">${job.pagesScanned}</div><div class="label">Pages scanned</div></div>
+      <div class="summary-card"><div class="num">${job.findings.length}</div><div class="label">Total findings</div></div>
+      ${['critical','serious','moderate','minor'].map(i => `
+        <div class="summary-card filter-card" data-filter="${i}" onclick="toggleFilter('${i}')">
+          <div class="num">${counts[i]}</div>
+          <div class="label">${i.charAt(0).toUpperCase() + i.slice(1)}</div>
+          <span class="filter-hint">show only</span>
+        </div>`).join('')}
+    </div>`;
+
+  const rows = job.findings.slice()
+    .sort((a, b) => impactRank(b.impact) - impactRank(a.impact))
+    .map(f => `
+      <tr data-impact="${f.impact || ''}">
+        <td><span class="badge ${f.impact}">${f.impact || 'n/a'}</span></td>
+        <td>${escHtml(f.rule_id)}</td>
+        <td class="url-cell">${escHtml(f.url)}</td>
+        <td class="location-cell">${renderLocation(f)}</td>
+        <td>${escHtml(f.help)} — <a href="${escHtml(f.help_url)}" target="_blank" rel="noopener">details</a></td>
+      </tr>`).join('');
+
+  el.innerHTML = `${summaryHtml}
+    <table>
+      <thead><tr><th>Impact</th><th>Rule</th><th>URL</th><th>Location</th><th>Issue</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+
+  syncFilterUI();
+  applyFilters();
+}
+
+// ── Filters ───────────────────────────────────────────────────────────────────
+function toggleFilter(impact) {
+  const all = ['critical','serious','moderate','minor'];
+  const allActive = all.every(i => activeFilters.has(i));
+  const onlyThis  = activeFilters.size === 1 && activeFilters.has(impact);
+  if (allActive)     activeFilters = new Set([impact]);
+  else if (onlyThis) activeFilters = new Set(all);
+  else {
+    if (activeFilters.has(impact)) {
+      activeFilters.delete(impact);
+      if (!activeFilters.size) activeFilters = new Set(all);
+    } else {
+      activeFilters.add(impact);
+    }
+  }
+  syncFilterUI();
+  applyFilters();
+}
+
+function syncFilterUI() {
+  document.querySelectorAll('.filter-card[data-filter]').forEach(card => {
+    card.classList.toggle('inactive', !activeFilters.has(card.dataset.filter));
+  });
+}
+
+function applyFilters() {
+  document.querySelectorAll('tbody tr[data-impact]').forEach(row => {
+    row.style.display = activeFilters.has(row.dataset.impact) ? '' : 'none';
+  });
+}
+
+// ── Location rendering ────────────────────────────────────────────────────────
+function renderLocation(f) {
+  const loc = f.location;
+  let html = '';
+  if (loc?.screenshot) {
+    html += `<img class="loc-thumb" src="${escHtml(loc.screenshot)}" alt="Element screenshot" onclick="openLightbox('${escHtml(loc.screenshot)}')" />`;
+  }
+  if (f.breadcrumb?.length) {
+    const crumbs  = f.breadcrumb;
+    const display = crumbs.length > 4 ? ['…', ...crumbs.slice(-3)] : crumbs;
+    const parts   = display.map((seg, i) => {
+      const isTarget = i === display.length - 1;
+      const label    = seg === '…' ? seg : escHtml(truncateSeg(seg));
+      return `<span class="seg${isTarget ? ' target' : ''}" title="${escHtml(seg)}">${label}</span>`;
+    });
+    html += `<div class="loc-breadcrumb">${parts.join('<span class="arrow">›</span>')}</div>`;
+  } else {
+    html += `<div class="loc-breadcrumb"><span class="seg target" title="${escHtml(f.target_selector)}">${escHtml(truncateSeg(f.target_selector || '', 30))}</span></div>`;
+  }
+  if (loc?.position) {
+    const p = loc.position;
+    const badge = p.aboveFold
+      ? '<span class="fold-badge">Above fold</span>'
+      : '<span class="fold-badge below">Below fold</span>';
+    html += `<div class="loc-position">${badge} ${p.percentDown}% down</div>`;
+  }
+  return html;
+}
+
+// ── Lightbox ──────────────────────────────────────────────────────────────────
+function openLightbox(src) {
+  document.getElementById('lightboxImg').src = src;
+  document.getElementById('lightbox').classList.add('open');
+}
+function closeLightbox() {
+  document.getElementById('lightbox').classList.remove('open');
+  document.getElementById('lightboxImg').src = '';
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function impactRank(impact) {
+  return { critical: 4, serious: 3, moderate: 2, minor: 1 }[impact] || 0;
+}
+
+function truncateSeg(seg, max = 22) {
+  return seg.length > max ? seg.slice(0, max - 1) + '…' : seg;
+}
+
+function escHtml(str) {
+  return String(str ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function formatDate(iso) {
+  const d = new Date(iso);
+  const dateStr = d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  const timeStr = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+  return { dateStr, timeStr };
+}
+</script>
+</body>
+</html>
