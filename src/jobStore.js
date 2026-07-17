@@ -38,6 +38,8 @@ function rowToFinding(row) {
     failure_summary: row.failure_summary,
     location: {
       position:   row.location?.position ?? null,
+      line:       row.location?.line     ?? null,
+      column:     row.location?.column   ?? null,
       screenshot: row.screenshot_path
         ? `/api/screenshots/${row.screenshot_path}`
         : null,
@@ -112,10 +114,24 @@ async function updateScanCounts(id, { pagesDiscovered }) {
 }
 
 async function addPageResult(id, pageResult) {
+  const findings = pageResult.findings;
+  const counts   = { critical: 0, serious: 0, moderate: 0, minor: 0 };
+  findings.forEach((f) => { if (counts[f.impact] !== undefined) counts[f.impact]++; });
+
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    for (const f of pageResult.findings) {
+
+    // Record this page and its finding counts
+    await client.query(
+      `INSERT INTO pages
+         (scan_id, url, findings_count, critical_count, serious_count, moderate_count, minor_count)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [id, pageResult.url, findings.length,
+       counts.critical, counts.serious, counts.moderate, counts.minor]
+    );
+
+    for (const f of findings) {
       await client.query(
         `INSERT INTO findings
            (scan_id, url, type, source_tool, rule_id, wcag_tags, impact,
@@ -155,6 +171,15 @@ async function addPageResult(id, pageResult) {
   }
 }
 
+async function getPages(scanId) {
+  const res = await pool.query(
+    `SELECT url, findings_count, critical_count, serious_count, moderate_count, minor_count, scanned_at
+     FROM pages WHERE scan_id = $1 ORDER BY scanned_at`,
+    [scanId]
+  );
+  return res.rows;
+}
+
 async function addError(id, { url, error }) {
   await pool.query(
     'INSERT INTO scan_errors (scan_id, url, message) VALUES ($1, $2, $3)',
@@ -184,6 +209,7 @@ module.exports = {
   updateScanCounts,
   addPageResult,
   addError,
+  getPages,
   requestStop,
   isStopRequested,
 };

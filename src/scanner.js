@@ -81,6 +81,10 @@ async function scanPageWithAxe(page, url, {
   tags = ['wcag2a', 'wcag2aa', 'wcag21aa'],
   captureScreenshots = false,
 } = {}) {
+  // Skip axe entirely if no tags requested
+  if (!tags || tags.length === 0) {
+    return { url, findings: [], passes_count: 0, incomplete_count: 0, scanned_at: new Date().toISOString() };
+  }
   const results = await new AxeBuilder({ page }).withTags(tags).analyze();
 
   // Measure page once — reused for every finding's position calculation

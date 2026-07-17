@@ -63,3 +63,19 @@ CREATE INDEX IF NOT EXISTS findings_scan_id_idx  ON findings(scan_id);
 CREATE INDEX IF NOT EXISTS findings_impact_idx   ON findings(impact);
 CREATE INDEX IF NOT EXISTS errors_scan_id_idx    ON scan_errors(scan_id);
 CREATE INDEX IF NOT EXISTS scans_created_at_idx  ON scans(created_at DESC);
+
+-- One row per page visited — stores pre-computed finding counts so the
+-- pages list can be shown quickly without joining to the findings table.
+CREATE TABLE IF NOT EXISTS pages (
+  id             SERIAL      PRIMARY KEY,
+  scan_id        UUID        NOT NULL REFERENCES scans(id) ON DELETE CASCADE,
+  url            TEXT        NOT NULL,
+  findings_count INT         NOT NULL DEFAULT 0,
+  critical_count INT         NOT NULL DEFAULT 0,
+  serious_count  INT         NOT NULL DEFAULT 0,
+  moderate_count INT         NOT NULL DEFAULT 0,
+  minor_count    INT         NOT NULL DEFAULT 0,
+  scanned_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS pages_scan_id_idx ON pages(scan_id);

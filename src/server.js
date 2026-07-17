@@ -5,7 +5,7 @@ const session      = require('express-session');
 const pgSession    = require('connect-pg-simple')(session);
 const pool         = require('./db');
 const { passport, requireAuth } = require('./auth');
-const { createJob, getJob, listJobs, requestStop } = require('./jobStore');
+const { createJob, getJob, listJobs, requestStop, getPages } = require('./jobStore');
 const { runJob }   = require('./orchestrator');
 
 const app      = express();
@@ -125,6 +125,13 @@ app.get('/api/scan/:id', async (req, res) => {
   const job = await getJob(req.params.id);
   if (!job) return res.status(404).json({ error: 'Job not found' });
   res.json(job);
+});
+
+app.get('/api/scan/:id/pages', async (req, res) => {
+  const job = await getJob(req.params.id);
+  if (!job) return res.status(404).json({ error: 'Job not found' });
+  const pages = await getPages(req.params.id);
+  res.json(pages);
 });
 
 app.post('/api/scan/:id/stop', async (req, res) => {

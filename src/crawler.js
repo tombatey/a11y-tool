@@ -111,7 +111,7 @@ async function crawlSite(context, rootUrl, options, onPageVisited, shouldStop = 
       const page = await context.newPage();
       activePages.add(page);
       try {
-        await page.goto(url, { waitUntil: 'networkidle', timeout: 30000 });
+        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
 
         // Check after navigation — skip the expensive scan if stop was requested
         // (either explicitly or because the stop watcher closed this page mid-load)

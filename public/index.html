@@ -128,6 +128,46 @@
 
   .empty { color: var(--muted); font-size: 13px; padding: 18px 4px; }
 
+  /* Pages panel */
+  .pages-toggle { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+  .pages-toggle-btn {
+    font-size: 12px; color: var(--muted); background: none; border: 1px solid var(--line);
+    border-radius: 6px; padding: 4px 10px; cursor: pointer; font-family: inherit;
+  }
+  .pages-toggle-btn:hover { border-color: var(--ink); color: var(--ink); }
+  .pages-panel { margin-bottom: 16px; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .pages-panel table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .pages-panel th { padding: 7px 12px; background: var(--paper); border-bottom: 1px solid var(--line); color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; text-align: left; }
+  .pages-panel td { padding: 8px 12px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+  .pages-panel tr:last-child td { border-bottom: none; }
+  .pages-panel tr.active td { background: #f0f5f3; }
+  .pages-panel tr[data-url] { cursor: pointer; }
+  .pages-panel tr[data-url]:hover td { background: #f7f7f5; }
+  .page-url { color: var(--accent); word-break: break-all; max-width: 500px; }
+  .page-sev { display: flex; gap: 8px; white-space: nowrap; }
+  .page-sev .ps { font-size: 11px; font-weight: 600; }
+  .page-sev .ps.critical { color: var(--critical); }
+  .page-sev .ps.serious  { color: var(--serious); }
+  .page-sev .ps.moderate { color: var(--moderate); }
+  .page-sev .ps.minor    { color: var(--minor); }
+  .page-sev .ps.none     { color: var(--line); }
+  .url-filter-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 12px; color: var(--muted); padding: 6px 10px; background: #f0f5f3; border-radius: 6px; }
+  .url-filter-bar strong { color: var(--accent); word-break: break-all; }
+  .url-filter-clear { margin-left: auto; background: none; border: none; cursor: pointer; font-size: 11px; color: var(--muted); text-decoration: underline; }
+
+  .type-badge { display: inline-block; font-size: 10px; font-weight: 600; padding: 1px 6px; border-radius: 4px; margin-right: 4px; vertical-align: middle; }
+  .type-badge.accessibility { background: #e1f5ee; color: #0f6e56; }
+  .type-badge.html-validation { background: #e6f1fb; color: #185fa5; }
+  .type-badge.css-validation, .type-badge.css-lint { background: #f3e6fb; color: #6418a5; }
+
+  .type-filters { display: flex; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; }
+  .type-filter-btn {
+    padding: 4px 12px; border: 1px solid var(--line); border-radius: 99px;
+    background: #fff; cursor: pointer; font-size: 12px; color: var(--muted);
+    font-family: inherit;
+  }
+  .type-filter-btn.active { border-color: var(--ink); color: var(--ink); font-weight: 500; background: var(--paper); }
+
   .tag-grid { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 0; }
   .tag-chip {
     display: flex; align-items: center; gap: 6px;
@@ -270,6 +310,18 @@
       </label>
       <label class="tag-chip">
         <input type="checkbox" value="experimental" /> experimental <span class="tag-desc">Axe experimental rules</span>
+      </label>
+    </div>
+
+    <div class="tag-section-label">Validation</div>
+    <div class="tag-grid">
+      <label class="tag-chip" id="htmlValidationChip">
+        <input type="checkbox" id="validateHtml" />
+        HTML validation <span class="tag-desc">W3C Nu markup checker</span>
+      </label>
+      <label class="tag-chip" id="cssValidationChip">
+        <input type="checkbox" id="validateCss" />
+        CSS validation <span class="tag-desc">W3C compliance + linting</span>
       </label>
     </div>
 

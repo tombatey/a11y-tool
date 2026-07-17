@@ -2,6 +2,9 @@ let mode = 'crawl';
 let pollTimer = null;
 let currentJobId = null;
 let activeFilters = new Set(['critical', 'serious', 'moderate', 'minor']);
+let activeTypes   = 'all'; // 'all' | 'accessibility' | 'html-validation' | 'css'
+let activeUrlFilter = null; // null = show all, string = filter to that URL
+let pagesVisible  = false;
 
 // Populate header with current user's name
 fetch('/api/me')
@@ -46,15 +49,25 @@ function getSelectedTags() {
 }
 
 function validateTagSelection() {
-  const tags = getSelectedTags();
-  startBtn.disabled = tags.length === 0;
-  startBtn.title = tags.length === 0 ? 'Select at least one tag to scan against.' : '';
+  const tags         = getSelectedTags();
+  const hasValidator = document.getElementById('validateHtml')?.checked
+                    || document.getElementById('validateCss')?.checked;
+  const canStart     = tags.length > 0 || hasValidator;
+  startBtn.disabled  = !canStart;
+  startBtn.title     = canStart ? '' : 'Select at least one WCAG tag or enable HTML/CSS validation.';
 }
 
 // Screenshot chip — keep .checked class in sync
 const screenshotCheckbox = document.getElementById('captureScreenshots');
 screenshotCheckbox.addEventListener('change', () => {
   document.getElementById('screenshotChip').classList.toggle('checked', screenshotCheckbox.checked);
+});
+
+// HTML/CSS validation chips
+['validateHtml', 'validateCss'].forEach((id) => {
+  const cb   = document.getElementById(id);
+  const chip = cb.closest('.tag-chip');
+  cb.addEventListener('change', () => chip.classList.toggle('checked', cb.checked));
 });
 
 // Auto-tick screenshots when switching to list mode (fewer pages, more detail makes sense)
@@ -74,27 +87,35 @@ modeListBtn.addEventListener('click', () => {
 startBtn.addEventListener('click', startScan);
 
 async function startScan() {
-  const tags = getSelectedTags();
-  if (tags.length === 0) return alert('Select at least one tag to scan against.');
-
+  const tags           = getSelectedTags();
   const captureScreenshots = screenshotCheckbox.checked;
+  const validateHtml       = document.getElementById('validateHtml').checked;
+  const validateCss        = document.getElementById('validateCss').checked;
+  const hasValidation      = validateHtml || validateCss;
+
+  if (tags.length === 0 && !hasValidation) {
+    return alert('Select at least one WCAG tag, or enable HTML or CSS validation.');
+  }
 
   let body;
   if (mode === 'crawl') {
-    const rootUrl = document.getElementById('rootUrl').value.trim();
+    const rootUrl  = document.getElementById('rootUrl').value.trim();
     if (!rootUrl) return alert('Enter a site root URL.');
     const maxPages = parseInt(document.getElementById('maxPages').value, 10) || 50;
     const maxDepth = parseInt(document.getElementById('maxDepth').value, 10) || 3;
-    body = { mode: 'crawl', rootUrl, options: { maxPages, maxDepth, tags, captureScreenshots } };
+    body = { mode: 'crawl', rootUrl, options: { maxPages, maxDepth, tags, captureScreenshots, validateHtml, validateCss } };
   } else {
     const raw = document.getElementById('urlList').value.trim();
     if (!raw) return alert('Enter at least one URL.');
     const urls = raw.split('\n').map((s) => s.trim()).filter(Boolean);
-    body = { mode: 'list', urls, options: { tags, captureScreenshots } };
+    body = { mode: 'list', urls, options: { tags, captureScreenshots, validateHtml, validateCss } };
   }
 
   startBtn.disabled = true;
-  activeFilters = new Set(['critical', 'serious', 'moderate', 'minor']);
+  activeFilters   = new Set(['critical', 'serious', 'moderate', 'minor']);
+  activeTypes     = 'all';
+  activeUrlFilter = null;
+  pagesVisible    = false;
   statusLine.style.display = 'flex';
   statusText.textContent = 'Starting…';
   resultsArea.innerHTML = '<div class="empty">Scan running…</div>';
@@ -164,73 +185,167 @@ function renderResults(job) {
     return;
   }
   if (job.findings.length === 0 && ['done', 'stopped'].includes(job.status)) {
-    resultsArea.innerHTML = '<div class="empty">No accessibility violations found. Nice.</div>';
+    resultsArea.innerHTML = '<div class="empty">No violations found. Nice.</div>';
     return;
   }
 
   const counts = { critical: 0, serious: 0, moderate: 0, minor: 0 };
   job.findings.forEach((f) => { if (counts[f.impact] !== undefined) counts[f.impact]++; });
 
+  // Type counts for filter buttons
+  const typeCounts = {};
+  job.findings.forEach((f) => {
+    const t = typeGroup(f.type);
+    typeCounts[t] = (typeCounts[t] || 0) + 1;
+  });
+  const hasMultipleTypes = Object.keys(typeCounts).length > 1;
+
+  const typeFilterHtml = hasMultipleTypes ? `
+    <div class="type-filters">
+      <button class="type-filter-btn ${activeTypes === 'all' ? 'active' : ''}" onclick="setTypeFilter('all')">All (${job.findings.length})</button>
+      ${Object.entries(typeCounts).map(([t, n]) =>
+        `<button class="type-filter-btn ${activeTypes === t ? 'active' : ''}" onclick="setTypeFilter('${t}')">${typeLabel(t)} (${n})</button>`
+      ).join('')}
+    </div>` : '';
+
   const summaryHtml = `
     <div class="summary-grid">
-      <div class="summary-card">
-        <div class="num">${job.pagesScanned}</div>
-        <div class="label">Pages scanned</div>
-      </div>
-      <div class="summary-card">
-        <div class="num">${job.findings.length}</div>
-        <div class="label">Total findings</div>
-      </div>
-      <div class="summary-card filter-card" data-filter="critical" onclick="toggleFilter('critical')">
-        <div class="num">${counts.critical}</div>
-        <div class="label">Critical</div>
-        <span class="filter-hint">show only</span>
-      </div>
-      <div class="summary-card filter-card" data-filter="serious" onclick="toggleFilter('serious')">
-        <div class="num">${counts.serious}</div>
-        <div class="label">Serious</div>
-        <span class="filter-hint">show only</span>
-      </div>
-      <div class="summary-card filter-card" data-filter="moderate" onclick="toggleFilter('moderate')">
-        <div class="num">${counts.moderate}</div>
-        <div class="label">Moderate</div>
-        <span class="filter-hint">show only</span>
-      </div>
-      <div class="summary-card filter-card" data-filter="minor" onclick="toggleFilter('minor')">
-        <div class="num">${counts.minor}</div>
-        <div class="label">Minor</div>
-        <span class="filter-hint">show only</span>
-      </div>
-    </div>
-  `;
+      <div class="summary-card"><div class="num">${job.pagesScanned}</div><div class="label">Pages scanned</div></div>
+      <div class="summary-card"><div class="num">${job.findings.length}</div><div class="label">Total findings</div></div>
+      ${['critical','serious','moderate','minor'].map(i => `
+        <div class="summary-card filter-card" data-filter="${i}" onclick="toggleFilter('${i}')">
+          <div class="num">${counts[i] || 0}</div>
+          <div class="label">${i.charAt(0).toUpperCase()+i.slice(1)}</div>
+          <span class="filter-hint">show only</span>
+        </div>`).join('')}
+    </div>`;
 
   const rows = job.findings
     .slice()
     .sort((a, b) => impactRank(b.impact) - impactRank(a.impact))
     .map((f) => `
-      <tr data-impact="${f.impact || ''}">
+      <tr data-impact="${f.impact || ''}" data-type="${typeGroup(f.type)}" data-url="${escapeHtml(f.url)}">
         <td><span class="badge ${f.impact}">${f.impact || 'n/a'}</span></td>
-        <td>${escapeHtml(f.rule_id)}</td>
+        <td><span class="type-badge ${f.type}">${typeLabel(typeGroup(f.type))}</span>${escapeHtml(f.rule_id)}</td>
         <td class="url-cell">${escapeHtml(f.url)}</td>
         <td class="location-cell">${renderLocation(f)}</td>
-        <td>${escapeHtml(f.help)} — <a href="${f.help_url}" target="_blank" rel="noopener">details</a></td>
-      </tr>
-    `).join('');
+        <td>${escapeHtml(f.help)} — <a href="${escapeHtml(f.help_url)}" target="_blank" rel="noopener">details</a></td>
+      </tr>`).join('');
+
+  const urlFilterBar = activeUrlFilter ? `
+    <div class="url-filter-bar">
+      Showing findings for: <strong>${escapeHtml(activeUrlFilter)}</strong>
+      <button class="url-filter-clear" onclick="clearUrlFilter()">Show all pages</button>
+    </div>` : '';
 
   resultsArea.innerHTML = `
+    ${typeFilterHtml}
     ${summaryHtml}
+    <div class="pages-toggle">
+      <span></span>
+      <button class="pages-toggle-btn" id="pagesToggleBtn" onclick="togglePagesPanel('${currentJobId || ''}')">
+        ${pagesVisible ? 'Hide pages' : 'Show pages scanned'}
+      </button>
+    </div>
+    <div id="pagesPanel" style="display:${pagesVisible ? 'block' : 'none'}"></div>
+    ${urlFilterBar}
     <table>
-      <thead>
-        <tr><th>Impact</th><th>Rule</th><th>URL</th><th>Location</th><th>Issue</th></tr>
-      </thead>
+      <thead><tr><th>Impact</th><th>Rule</th><th>URL</th><th>Location</th><th>Issue</th></tr></thead>
       <tbody>${rows}</tbody>
-    </table>
-  `;
+    </table>`;
 
-  // Restore filter state after re-render (polling replaces innerHTML each tick)
   syncFilterUI();
   applyFilters();
+  if (pagesVisible && currentJobId) loadPagesPanel(currentJobId, 'pagesPanel');
 }
+
+async function togglePagesPanel(jobId) {
+  pagesVisible = !pagesVisible;
+  const panel = document.getElementById('pagesPanel');
+  const btn   = document.getElementById('pagesToggleBtn');
+  if (!panel || !btn) return;
+  panel.style.display = pagesVisible ? 'block' : 'none';
+  btn.textContent = pagesVisible ? 'Hide pages' : 'Show pages scanned';
+  if (pagesVisible && jobId) await loadPagesPanel(jobId, 'pagesPanel');
+}
+
+async function loadPagesPanel(jobId, panelId) {
+  const panel = document.getElementById(panelId);
+  if (!panel) return;
+  panel.innerHTML = '<div class="empty" style="padding:12px">Loading pages…</div>';
+  const pages = await fetch(`/api/scan/${jobId}/pages`).then(r => r.json()).catch(() => []);
+  if (!pages.length) {
+    panel.innerHTML = '<div class="empty" style="padding:12px">No pages recorded.</div>';
+    return;
+  }
+  const rows = pages.map(p => {
+    const sc = p;
+    const sevHtml = (sc.findings_count === 0)
+      ? '<span class="ps none">No findings</span>'
+      : [
+          sc.critical_count ? `<span class="ps critical">●&nbsp;${sc.critical_count} critical</span>` : '',
+          sc.serious_count  ? `<span class="ps serious">●&nbsp;${sc.serious_count} serious</span>`   : '',
+          sc.moderate_count ? `<span class="ps moderate">●&nbsp;${sc.moderate_count} moderate</span>` : '',
+          sc.minor_count    ? `<span class="ps minor">●&nbsp;${sc.minor_count} minor</span>`          : '',
+        ].filter(Boolean).join('');
+    const isActive = activeUrlFilter === p.url;
+    return `<tr data-url="${escapeHtml(p.url)}" class="${isActive ? 'active' : ''}" onclick="setUrlFilter('${escapeHtml(p.url)}', '${jobId}', '${panelId}')">
+      <td class="page-url">${escapeHtml(p.url)}</td>
+      <td><div class="page-sev">${sevHtml}</div></td>
+    </tr>`;
+  }).join('');
+  panel.innerHTML = `<div class="pages-panel">
+    <table>
+      <thead><tr><th>URL (${pages.length})</th><th>Findings</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  </div>`;
+}
+
+function setUrlFilter(url, jobId, panelId) {
+  activeUrlFilter = activeUrlFilter === url ? null : url;
+  // Refresh panel to update active row
+  loadPagesPanel(jobId, panelId);
+  applyFilters();
+  // Show/hide url filter bar
+  const bar = document.querySelector('.url-filter-bar');
+  if (bar) bar.remove();
+  if (activeUrlFilter) {
+    const barHtml = document.createElement('div');
+    barHtml.className = 'url-filter-bar';
+    barHtml.innerHTML = `Showing findings for: <strong>${escapeHtml(activeUrlFilter)}</strong>
+      <button class="url-filter-clear" onclick="clearUrlFilter()">Show all pages</button>`;
+    const table = document.querySelector('tbody')?.closest('table');
+    if (table) table.before(barHtml);
+  }
+}
+
+function clearUrlFilter() {
+  activeUrlFilter = null;
+  document.querySelector('.url-filter-bar')?.remove();
+  document.querySelectorAll('.pages-panel tr[data-url]').forEach(r => r.classList.remove('active'));
+  applyFilters();
+}
+
+function typeGroup(type) {
+  if (!type || type === 'accessibility') return 'accessibility';
+  if (type === 'html-validation') return 'html-validation';
+  return 'css';
+}
+
+function typeLabel(group) {
+  return { accessibility: 'A11Y', 'html-validation': 'HTML', css: 'CSS' }[group] || group.toUpperCase();
+}
+
+function setTypeFilter(type) {
+  activeTypes = type;
+  document.querySelectorAll('.type-filter-btn').forEach((btn) => {
+    const btnType = btn.getAttribute('onclick').match(/setTypeFilter\('(.+?)'\)/)?.[1];
+    btn.classList.toggle('active', btnType === type);
+  });
+  applyFilters();
+}
+
 
 function toggleFilter(impact) {
   const allImpacts = ['critical', 'serious', 'moderate', 'minor'];
@@ -264,7 +379,10 @@ function syncFilterUI() {
 
 function applyFilters() {
   document.querySelectorAll('tbody tr[data-impact]').forEach((row) => {
-    row.style.display = activeFilters.has(row.dataset.impact) ? '' : 'none';
+    const impactMatch = activeFilters.has(row.dataset.impact);
+    const typeMatch   = activeTypes === 'all' || row.dataset.type === activeTypes;
+    const urlMatch    = !activeUrlFilter || row.dataset.url === activeUrlFilter;
+    row.style.display = (impactMatch && typeMatch && urlMatch) ? '' : 'none';
   });
 }
 
@@ -276,12 +394,21 @@ function renderLocation(f) {
   const loc = f.location;
   let html = '';
 
-  // Screenshot thumbnail
+  // HTML/CSS findings: show line/column instead of DOM location
+  if (loc && loc.line !== null && loc.line !== undefined) {
+    const lineCol = loc.column ? `Line ${loc.line}, Col ${loc.column}` : `Line ${loc.line}`;
+    html += `<div class="loc-breadcrumb"><span class="seg target">${lineCol}</span></div>`;
+    if (f.target_selector) {
+      html += `<div class="loc-position" style="font-family:ui-monospace,monospace;font-size:10px">${escapeHtml(truncateSeg(f.target_selector, 30))}</div>`;
+    }
+    return html;
+  }
+
+  // Accessibility findings: screenshot, breadcrumb, DOM position
   if (loc && loc.screenshot) {
     html += `<img class="loc-thumb" src="${loc.screenshot}" alt="Element screenshot" onclick="openLightbox('${loc.screenshot}')" />`;
   }
 
-  // Breadcrumb — last 4 segments, each truncated to prevent overflow
   if (f.breadcrumb && f.breadcrumb.length > 0) {
     const crumbs = f.breadcrumb;
     const display = crumbs.length > 4 ? ['…', ...crumbs.slice(-3)] : crumbs;
@@ -296,7 +423,6 @@ function renderLocation(f) {
     html += `<div class="loc-breadcrumb"><span class="seg target" title="${escapeHtml(f.target_selector)}">${escapeHtml(raw)}</span></div>`;
   }
 
-  // Position info
   if (loc && loc.position) {
     const p = loc.position;
     const foldLabel = p.aboveFold

@@ -4,6 +4,8 @@ const { chromium } = require('playwright');
 const { v4: uuidv4 } = require('uuid');
 const { crawlSite, normalizeUrl } = require('./crawler');
 const { scanPageWithAxe } = require('./scanner');
+const { validateHtml }    = require('./validators/html');
+const { validateCss }     = require('./validators/css');
 const {
   setStatus,
   updateScanCounts,
@@ -42,6 +44,44 @@ async function processFinding(scanId, finding) {
   };
 }
 
+async function runAllValidators(page, url, options, seenStylesheets) {
+  const tasks = [
+    scanPageWithAxe(page, url, {
+      tags:               options.tags,
+      captureScreenshots: options.captureScreenshots ?? false,
+    }),
+  ];
+
+  // HTML validation — requires vnu server running locally
+  if (options.validateHtml) {
+    tasks.push(
+      page.content()
+        .then((html) => validateHtml(html, url))
+        .then((findings) => ({ findings, passes_count: 0, incomplete_count: 0, scanned_at: new Date().toISOString(), url }))
+        .catch(() => ({ findings: [], url }))
+    );
+  }
+
+  // CSS validation — deduplicated via seenStylesheets Set shared across pages
+  if (options.validateCss) {
+    tasks.push(
+      validateCss(page, url, seenStylesheets)
+        .then((findings) => ({ findings, passes_count: 0, incomplete_count: 0, scanned_at: new Date().toISOString(), url }))
+        .catch(() => ({ findings: [], url }))
+    );
+  }
+
+  const results = await Promise.all(tasks);
+
+  return {
+    url,
+    findings:         results.flatMap((r) => r.findings || []),
+    passes_count:     results[0]?.passes_count     ?? 0,
+    incomplete_count: results[0]?.incomplete_count ?? 0,
+    scanned_at:       results[0]?.scanned_at       ?? new Date().toISOString(),
+  };
+}
+
 async function appendResult(scanId, result) {
   const processed = await Promise.all(
     result.findings.map((f) => processFinding(scanId, f))
@@ -53,9 +93,14 @@ async function appendResult(scanId, result) {
 
 async function runJob(job) {
   const { id, input } = job;
+  const opts          = input.options || {};
   const browser       = await chromium.launch();
   const context       = await browser.newContext();
   const shouldStop    = () => isStopRequested(id);
+
+  // Tracks stylesheet URLs already validated — shared across all pages in this
+  // scan so each external CSS file is only checked once, not once per page.
+  const seenStylesheets = new Set();
 
   try {
     if (input.mode === 'crawl') {
@@ -64,13 +109,10 @@ async function runJob(job) {
       const { visitedUrls, errors } = await crawlSite(
         context,
         input.rootUrl,
-        input.options || {},
+        opts,
         async ({ url, page }) => {
           await setStatus(id, 'scanning');
-          const result = await scanPageWithAxe(page, url, {
-            tags:               input.options?.tags,
-            captureScreenshots: input.options?.captureScreenshots ?? false,
-          });
+          const result = await runAllValidators(page, url, opts, seenStylesheets);
           await appendResult(id, result);
         },
         shouldStop
@@ -87,12 +129,9 @@ async function runJob(job) {
         const url  = normalizeUrl(rawUrl) || rawUrl;
         const page = await context.newPage();
         try {
-          await page.goto(url, { waitUntil: 'networkidle', timeout: 30000 });
+          await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
           if (!shouldStop()) {
-            const result = await scanPageWithAxe(page, url, {
-              tags:               input.options?.tags,
-              captureScreenshots: input.options?.captureScreenshots ?? false,
-            });
+            const result = await runAllValidators(page, url, opts, seenStylesheets);
             await appendResult(id, result);
           }
         } catch (err) {

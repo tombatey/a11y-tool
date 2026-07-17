@@ -109,6 +109,30 @@
   .lightbox.open { display: flex; }
   .lightbox img { max-width: 90vw; max-height: 85vh; border-radius: 6px; box-shadow: 0 8px 40px rgba(0,0,0,0.5); }
   .lightbox-close { position: fixed; top: 20px; right: 24px; background: none; border: none; color: #fff; font-size: 28px; cursor: pointer; }
+
+  /* Pages panel */
+  .pages-toggle { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+  .pages-toggle-btn { font-size: 12px; color: var(--muted); background: none; border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; cursor: pointer; font-family: inherit; }
+  .pages-toggle-btn:hover { border-color: var(--ink); color: var(--ink); }
+  .pages-panel { margin-bottom: 16px; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .pages-panel table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .pages-panel th { padding: 7px 12px; background: var(--paper); border-bottom: 1px solid var(--line); color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; text-align: left; }
+  .pages-panel td { padding: 8px 12px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+  .pages-panel tr:last-child td { border-bottom: none; }
+  .pages-panel tr.active td { background: #f0f5f3; }
+  .pages-panel tr[data-url] { cursor: pointer; }
+  .pages-panel tr[data-url]:hover td { background: #f7f7f5; }
+  .page-url { color: var(--accent); word-break: break-all; max-width: 500px; }
+  .page-sev { display: flex; gap: 8px; white-space: nowrap; }
+  .page-sev .ps { font-size: 11px; font-weight: 600; }
+  .page-sev .ps.critical { color: var(--critical); }
+  .page-sev .ps.serious  { color: var(--serious); }
+  .page-sev .ps.moderate { color: var(--moderate); }
+  .page-sev .ps.minor    { color: var(--minor); }
+  .page-sev .ps.none     { color: var(--line); }
+  .url-filter-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 12px; color: var(--muted); padding: 6px 10px; background: #f0f5f3; border-radius: 6px; }
+  .url-filter-bar strong { color: var(--accent); word-break: break-all; }
+  .url-filter-clear { margin-left: auto; background: none; border: none; cursor: pointer; font-size: 11px; color: var(--muted); text-decoration: underline; }
 </style>
 </head>
 <body>
@@ -300,7 +324,7 @@ function renderResults(job) {
   const rows = job.findings.slice()
     .sort((a, b) => impactRank(b.impact) - impactRank(a.impact))
     .map(f => `
-      <tr data-impact="${f.impact || ''}">
+      <tr data-impact="${f.impact || ''}" data-url="${escHtml(f.url)}">
         <td><span class="badge ${f.impact}">${f.impact || 'n/a'}</span></td>
         <td>${escHtml(f.rule_id)}</td>
         <td class="url-cell">${escHtml(f.url)}</td>
@@ -308,13 +332,80 @@ function renderResults(job) {
         <td>${escHtml(f.help)} — <a href="${escHtml(f.help_url)}" target="_blank" rel="noopener">details</a></td>
       </tr>`).join('');
 
+  const scanId = new URLSearchParams(window.location.search).get('id');
   el.innerHTML = `${summaryHtml}
+    <div class="pages-toggle">
+      <span></span>
+      <button class="pages-toggle-btn" id="pagesToggleBtn" onclick="togglePagesPanelH('${scanId || ''}')">Show pages scanned</button>
+    </div>
+    <div id="pagesPanelH" style="display:none"></div>
     <table>
       <thead><tr><th>Impact</th><th>Rule</th><th>URL</th><th>Location</th><th>Issue</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>`;
 
   syncFilterUI();
+  applyFilters();
+}
+
+let hPagesVisible = false;
+let hUrlFilter = null;
+
+async function togglePagesPanelH(jobId) {
+  hPagesVisible = !hPagesVisible;
+  const panel = document.getElementById('pagesPanelH');
+  const btn   = document.getElementById('pagesToggleBtn');
+  if (!panel || !btn) return;
+  panel.style.display = hPagesVisible ? 'block' : 'none';
+  btn.textContent = hPagesVisible ? 'Hide pages' : 'Show pages scanned';
+  if (hPagesVisible && jobId) await loadPagesPanelH(jobId);
+}
+
+async function loadPagesPanelH(jobId) {
+  const panel = document.getElementById('pagesPanelH');
+  if (!panel) return;
+  panel.innerHTML = '<div class="empty" style="padding:12px">Loading pages…</div>';
+  const pages = await fetch(`/api/scan/${jobId}/pages`).then(r => r.json()).catch(() => []);
+  if (!pages.length) { panel.innerHTML = '<div class="empty" style="padding:12px">No pages recorded.</div>'; return; }
+  const rows = pages.map(p => {
+    const sevHtml = p.findings_count === 0
+      ? '<span class="ps none">No findings</span>'
+      : [
+          p.critical_count ? `<span class="ps critical">● ${p.critical_count} critical</span>` : '',
+          p.serious_count  ? `<span class="ps serious">● ${p.serious_count} serious</span>`   : '',
+          p.moderate_count ? `<span class="ps moderate">● ${p.moderate_count} moderate</span>` : '',
+          p.minor_count    ? `<span class="ps minor">● ${p.minor_count} minor</span>`          : '',
+        ].filter(Boolean).join('');
+    const isActive = hUrlFilter === p.url;
+    return `<tr data-url="${escHtml(p.url)}" class="${isActive ? 'active' : ''}" onclick="setHUrlFilter('${escHtml(p.url)}', '${jobId}')">
+      <td class="page-url">${escHtml(p.url)}</td>
+      <td><div class="page-sev">${sevHtml}</div></td>
+    </tr>`;
+  }).join('');
+  panel.innerHTML = `<div class="pages-panel"><table>
+    <thead><tr><th>URL (${pages.length})</th><th>Findings</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table></div>`;
+}
+
+function setHUrlFilter(url, jobId) {
+  hUrlFilter = hUrlFilter === url ? null : url;
+  loadPagesPanelH(jobId);
+  applyFilters();
+  document.querySelector('.url-filter-bar')?.remove();
+  if (hUrlFilter) {
+    const bar = document.createElement('div');
+    bar.className = 'url-filter-bar';
+    bar.innerHTML = `Showing findings for: <strong>${escHtml(hUrlFilter)}</strong>
+      <button class="url-filter-clear" onclick="clearHUrlFilter()">Show all pages</button>`;
+    document.querySelector('tbody')?.closest('table')?.before(bar);
+  }
+}
+
+function clearHUrlFilter() {
+  hUrlFilter = null;
+  document.querySelector('.url-filter-bar')?.remove();
+  document.querySelectorAll('.pages-panel tr[data-url]').forEach(r => r.classList.remove('active'));
   applyFilters();
 }
 
@@ -345,7 +436,9 @@ function syncFilterUI() {
 
 function applyFilters() {
   document.querySelectorAll('tbody tr[data-impact]').forEach(row => {
-    row.style.display = activeFilters.has(row.dataset.impact) ? '' : 'none';
+    const impactMatch = activeFilters.has(row.dataset.impact);
+    const urlMatch    = !hUrlFilter || row.dataset.url === hUrlFilter;
+    row.style.display = (impactMatch && urlMatch) ? '' : 'none';
   });
 }
 
