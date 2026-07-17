@@ -232,6 +232,18 @@ function renderResults(job) {
         <td>${escapeHtml(f.help)} — <a href="${escapeHtml(f.help_url)}" target="_blank" rel="noopener">details</a></td>
       </tr>`).join('');
 
+  const exportBar = `
+    <div class="export-bar">
+      <a class="export-btn" href="/api/scan/${currentJobId}/export/pdf" target="_blank">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="2" y="1" width="8" height="12" rx="1" stroke="currentColor" stroke-width="1.2"/><path d="M4 5h4M4 7h4M4 9h2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+        Export PDF
+      </a>
+      <a class="export-btn" href="/api/scan/${currentJobId}/export/csv" download>
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="2" y="1" width="10" height="12" rx="1" stroke="currentColor" stroke-width="1.2"/><path d="M4 4h6M4 7h6M4 10h4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+        Export CSV
+      </a>
+    </div>`;
+
   const urlFilterBar = activeUrlFilter ? `
     <div class="url-filter-bar">
       Showing findings for: <strong>${escapeHtml(activeUrlFilter)}</strong>
@@ -241,6 +253,7 @@ function renderResults(job) {
   resultsArea.innerHTML = `
     ${typeFilterHtml}
     ${summaryHtml}
+    ${exportBar}
     <div class="pages-toggle">
       <span></span>
       <button class="pages-toggle-btn" id="pagesToggleBtn" onclick="togglePagesPanel('${currentJobId || ''}')">

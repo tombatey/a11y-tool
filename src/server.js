@@ -7,6 +7,7 @@ const pool         = require('./db');
 const { passport, requireAuth } = require('./auth');
 const { createJob, getJob, listJobs, requestStop, getPages } = require('./jobStore');
 const { runJob }   = require('./orchestrator');
+const { generateReportHtml } = require('./report');
 
 const app      = express();
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '..', 'data');
@@ -132,6 +133,87 @@ app.get('/api/scan/:id/pages', async (req, res) => {
   if (!job) return res.status(404).json({ error: 'Job not found' });
   const pages = await getPages(req.params.id);
   res.json(pages);
+});
+
+// ─── PDF export ───────────────────────────────────────────────────────────────
+app.get('/api/scan/:id/export/pdf', async (req, res) => {
+  try {
+    const job = await getJob(req.params.id);
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+    const pages = await getPages(req.params.id);
+
+    const html    = generateReportHtml(job, pages);
+    const { chromium } = require('playwright');
+    const browser = await chromium.launch();
+    const page    = await browser.newPage();
+    await page.setContent(html, { waitUntil: 'domcontentloaded' });
+    const pdf = await page.pdf({
+      format:          'A4',
+      printBackground: true,
+      margin:          { top: '15mm', right: '15mm', bottom: '15mm', left: '15mm' },
+    });
+    await browser.close();
+
+    const dateStr  = new Date(job.createdAt).toISOString().slice(0, 10);
+    const filename = `webdepend-a11y-report-${dateStr}.pdf`;
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(pdf);
+  } catch (err) {
+    console.error('PDF export error:', err.message);
+    res.status(500).json({ error: 'Failed to generate PDF' });
+  }
+});
+
+// ─── CSV export ───────────────────────────────────────────────────────────────
+app.get('/api/scan/:id/export/csv', async (req, res) => {
+  try {
+    const job = await getJob(req.params.id);
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+
+    const input    = job.input || {};
+    const target   = input.mode === 'crawl' ? input.rootUrl : `URL list (${(input.urls||[]).length} URLs)`;
+    const dateStr  = new Date(job.createdAt).toISOString().slice(0, 10);
+
+    const csvEscape = (val) => {
+      const s = String(val ?? '');
+      return s.includes(',') || s.includes('"') || s.includes('\n')
+        ? `"${s.replace(/"/g, '""')}"`
+        : s;
+    };
+
+    const lines = [
+      // Metadata header rows
+      ['WebDepend Accessibility Report'],
+      ['Scan Date', dateStr],
+      ['Target',    target],
+      ['Pages Scanned', job.pagesScanned],
+      ['Total Findings', (job.findings || []).length],
+      [],
+      // Column headers
+      ['URL', 'Impact', 'Type', 'Source Tool', 'Rule ID', 'Issue', 'Location', 'Help URL'],
+      // Findings
+      ...(job.findings || [])
+        .sort((a, b) => ({ critical: 4, serious: 3, moderate: 2, minor: 1 }[b.impact] || 0)
+                       - ({ critical: 4, serious: 3, moderate: 2, minor: 1 }[a.impact] || 0))
+        .map(f => {
+          const loc = f.location?.line
+            ? `Line ${f.location.line}${f.location.column ? `, Col ${f.location.column}` : ''}`
+            : (f.breadcrumb || []).slice(-3).join(' > ') || f.target_selector || '';
+          return [f.url, f.impact, f.type, f.source_tool, f.rule_id, f.help || f.description, loc, f.help_url];
+        }),
+    ];
+
+    const csv = lines.map(row => row.map(csvEscape).join(',')).join('\r\n');
+
+    const filename = `webdepend-a11y-report-${dateStr}.csv`;
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send('\uFEFF' + csv); // BOM for Excel UTF-8 compatibility
+  } catch (err) {
+    console.error('CSV export error:', err.message);
+    res.status(500).json({ error: 'Failed to generate CSV' });
+  }
 });
 
 app.post('/api/scan/:id/stop', async (req, res) => {
