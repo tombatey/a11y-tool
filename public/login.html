@@ -6,16 +6,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <style>
   :root {
-    --ink: #16191c;
-    --paper: #fafaf8;
-    --line: #e2e1dc;
-    --muted: #6b6f73;
-    --accent: #2f5d50;
-  }
+  --ink: #014357; --body: #334155; --paper: #F8FAFC; --line: #E2E8F0; --accent: #017CA1;
+}
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
-    background: var(--paper);
+    background: #E1F7FE;
     color: var(--ink);
     min-height: 100vh;
     display: flex;
@@ -36,7 +32,7 @@
     font-weight: 700;
     letter-spacing: 0.08em;
     text-transform: uppercase;
-    color: var(--accent);
+    color: #017CA1;
     margin-bottom: 8px;
   }
   h1 {
@@ -69,7 +65,7 @@
     transition: border-color 0.15s, box-shadow 0.15s;
   }
   .google-btn:hover {
-    border-color: #aaa;
+    border-color: #02BFF8;
     box-shadow: 0 1px 4px rgba(0,0,0,0.08);
   }
   .google-logo { flex-shrink: 0; }
@@ -92,7 +88,7 @@
 <body>
 <div class="card">
   <div class="wordmark">WebDepend</div>
-  <h1>Accessibility Scanner</h1>
+  <h1 style="color:#014357">Accessibility Scanner</h1>
   <p class="subtitle">Sign in with your WebDepend Google account to continue.</p>
 
   <a class="google-btn" href="/auth/google">

@@ -15,6 +15,76 @@ fetch('/api/me')
   })
   .catch(() => {});
 
+// Check for ?rescan= parameter and pre-fill form if present
+window.addEventListener('DOMContentLoaded', () => {
+  const params   = new URLSearchParams(window.location.search);
+  const rescanId = params.get('rescan');
+  const forceMode = params.get('mode'); // 'list' = convert crawl to URL list
+  if (rescanId) preFillFromScan(rescanId, forceMode);
+});
+
+async function preFillFromScan(scanId, forceMode) {
+  const [job, pages] = await Promise.all([
+    fetch(`/api/scan/${scanId}`).then(r => r.json()).catch(() => null),
+    forceMode === 'list'
+      ? fetch(`/api/scan/${scanId}/pages`).then(r => r.json()).catch(() => [])
+      : Promise.resolve([]),
+  ]);
+  if (!job) return;
+
+  const input      = job.input || {};
+  const opts       = input.options || {};
+  const targetMode = forceMode || input.mode || 'crawl';
+
+  // Set mode toggle
+  setMode(targetMode);
+
+  if (targetMode === 'crawl') {
+    document.getElementById('rootUrl').value  = input.rootUrl || '';
+    document.getElementById('maxPages').value = opts.maxPages || 50;
+    document.getElementById('maxDepth').value = opts.maxDepth || 3;
+  } else {
+    // list mode — either original URLs or discovered pages from a crawl
+    const urls = forceMode === 'list' && pages.length
+      ? pages.map(p => p.url)
+      : (input.urls || []);
+    document.getElementById('urlList').value = urls.join('\n');
+  }
+
+  // WCAG tag checkboxes
+  const tags = opts.tags || [];
+  document.querySelectorAll('.tag-chip input[type=checkbox][value]').forEach(cb => {
+    const checked = tags.includes(cb.value);
+    cb.checked = checked;
+    cb.closest('.tag-chip').classList.toggle('checked', checked);
+  });
+
+  // Validation options
+  const setChip = (id, val) => {
+    const cb = document.getElementById(id);
+    if (!cb) return;
+    cb.checked = !!val;
+    cb.closest('.tag-chip')?.classList.toggle('checked', !!val);
+  };
+  setChip('validateHtml',        opts.validateHtml);
+  setChip('validateCss',         opts.validateCss);
+  setChip('captureScreenshots',  opts.captureScreenshots);
+
+  validateTagSelection();
+
+  // Show banner
+  const dateStr = new Date(job.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  const modeNote = forceMode === 'list' && input.mode === 'crawl'
+    ? ` — using ${pages.length} discovered URLs as a URL list`
+    : '';
+  document.getElementById('rescanBannerText').textContent =
+    `ℹ Pre-filled from scan on ${dateStr}${modeNote}. Review settings then click Start scan.`;
+  document.getElementById('rescanBanner').style.display = 'flex';
+
+  // Clean up URL without triggering a reload
+  window.history.replaceState({}, '', '/');
+}
+
 const modeCrawlBtn = document.getElementById('modeCrawlBtn');
 const modeListBtn = document.getElementById('modeListBtn');
 const crawlFields = document.getElementById('crawlFields');

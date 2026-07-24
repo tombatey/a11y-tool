@@ -98,7 +98,7 @@ function generateReportHtml(job, pages = []) {
     <tr>
       <td style="white-space:nowrap">${impactBadge(f.impact)}</td>
       <td>${typeBadge(f.type)}</td>
-      <td style="font-size:11px;color:#2f5d50;word-break:break-all;max-width:200px">${escHtml(f.url)}</td>
+      <td style="font-size:11px;color:#017CA1;word-break:break-all;max-width:200px">${escHtml(f.url)}</td>
       <td style="font-size:11px;font-family:monospace;color:#444">${escHtml(f.rule_id || '')}</td>
       <td style="font-size:11px">${escHtml(f.help || f.description || '')}</td>
       <td style="font-size:11px;color:#666;white-space:nowrap">${escHtml(locationText(f))}</td>
@@ -112,7 +112,7 @@ function generateReportHtml(job, pages = []) {
       p.minor_count    ? `<span style="color:#5b6470;font-weight:600">${p.minor_count} minor</span>`       : '',
     ].filter(Boolean).join(', ') || '<span style="color:#ccc">None</span>';
     return `<tr>
-      <td style="font-size:11px;color:#2f5d50;word-break:break-all">${escHtml(p.url)}</td>
+      <td style="font-size:11px;color:#017CA1;word-break:break-all">${escHtml(p.url)}</td>
       <td style="font-size:11px">${sevParts}</td>
     </tr>`;
   }).join('');
@@ -126,24 +126,24 @@ function generateReportHtml(job, pages = []) {
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: -apple-system, Helvetica, Arial, sans-serif; color: #16191c; font-size: 12px; line-height: 1.5; }
   h1 { font-size: 22px; font-weight: 700; color: #16191c; }
-  h2 { font-size: 14px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #8CC63F; margin-bottom: 10px; padding-bottom: 6px; border-bottom: 2px solid #8CC63F; }
+  h2 { font-size: 14px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #547717; margin-bottom: 10px; padding-bottom: 6px; border-bottom: 2px solid #98D62C; }
   table { width: 100%; border-collapse: collapse; }
-  th { text-align: left; padding: 7px 8px; font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: #6b6f73; border-bottom: 1px solid #e2e1dc; background: #fafaf8; }
-  td { padding: 7px 8px; border-bottom: 1px solid #e2e1dc; vertical-align: top; }
+  th { text-align: left; padding: 7px 8px; font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: #64748B; border-bottom: 1px solid #E2E8F0; background: #F8FAFC; }
+  td { padding: 7px 8px; border-bottom: 1px solid #E2E8F0; vertical-align: top; }
   tr:last-child td { border-bottom: none; }
   .section { margin-bottom: 28px; }
   .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 24px; margin-bottom: 24px; }
-  .meta-item .label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: #6b6f73; }
+  .meta-item .label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: #64748B; }
   .meta-item .value { font-size: 13px; font-weight: 500; }
   .stat-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; margin-bottom: 24px; }
-  .stat { border: 1px solid #e2e1dc; border-radius: 8px; padding: 10px; text-align: center; }
-  .stat .num { font-size: 22px; font-weight: 700; }
+  .stat { border: 1px solid #E2E8F0; border-radius: 8px; padding: 10px; text-align: center; background: #fff; }
+  .stat .num { font-size: 22px; font-weight: 700; color: #014357; }
   .stat .lbl { font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; color: #6b6f73; }
   .stat.critical .num { color: #8c2f2f; }
   .stat.serious  .num { color: #b5611c; }
   .stat.moderate .num { color: #8a7a1e; }
   .stat.minor    .num { color: #5b6470; }
-  .footer { margin-top: 32px; padding-top: 12px; border-top: 1px solid #e2e1dc; color: #6b6f73; font-size: 10px; display: flex; justify-content: space-between; }
+  .footer { margin-top: 32px; padding-top: 12px; border-top: 1px solid #E2E8F0; color: #64748B; font-size: 10px; display: flex; justify-content: space-between; }
   @media print {
     body { font-size: 11px; }
     .section { page-break-inside: avoid; }
@@ -152,14 +152,14 @@ function generateReportHtml(job, pages = []) {
   }
 </style>
 </head>
-<body style="padding: 32px 36px">
+<body style="padding: 32px 36px; background: #F8FAFC; color: #334155;">
 
 <!-- Header -->
-<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:28px;padding-bottom:20px;border-bottom:3px solid #8CC63F">
+<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:28px;padding-bottom:20px;border-bottom:3px solid #98D62C">
   ${logo ? `<img src="${logo}" style="height:40px;width:auto" alt="WebDepend"/>` : '<strong style="font-size:20px;color:#00AEEF">Web<span style="color:#8CC63F">Depend</span></strong>'}
   <div style="text-align:right">
-    <div style="font-size:18px;font-weight:700;color:#16191c">Accessibility Report</div>
-    <div style="font-size:12px;color:#6b6f73">${escHtml(date)}</div>
+    <div style="font-size:18px;font-weight:700;color:#014357">Accessibility Report</div>
+    <div style="font-size:12px;color:#64748B">${escHtml(date)}</div>
   </div>
 </div>
 

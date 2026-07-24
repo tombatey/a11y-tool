@@ -6,13 +6,20 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <style>
   :root {
-    --ink: #16191c; --paper: #fafaf8; --line: #e2e1dc;
-    --muted: #6b6f73; --accent: #2f5d50; --critical: #8c2f2f;
-  }
+  --blue-900: #014357; --blue-800: #017CA1; --blue-700: #02A2D3;
+  --blue-600: #02BFF8; --blue-100: #E1F7FE;
+  --green-900: #354C0F; --green-800: #547717; --green-700: #82B824;
+  --green-600: #98D62C; --green-100: #F3FAE6;
+  --slate-900: #0F172A; --slate-700: #334155; --slate-500: #64748B;
+  --slate-200: #E2E8F0; --slate-50: #F8FAFC;
+  --ink:   #014357; --body: #334155; --paper: #F8FAFC;
+  --line:  #E2E8F0; --muted: #64748B; --accent: #017CA1;
+  --critical: #8c2f2f; --serious: #b5611c; --moderate: #8a7a1e; --minor: #5b6470;
+}
   * { box-sizing: border-box; }
   body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; background: var(--paper); color: var(--ink); }
   header { padding: 32px 32px 24px; border-bottom: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; }
-  header h1 { margin: 0 0 4px; font-size: 20px; font-weight: 700; letter-spacing: -0.01em; }
+  header h1 { margin: 0 0 4px; font-size: 20px; font-weight: 700; letter-spacing: -0.01em; color: var(--ink); }
   header p { margin: 0; color: var(--muted); font-size: 13px; }
   .header-right { display: flex; align-items: center; gap: 16px; }
   .header-link { font-size: 13px; color: var(--muted); text-decoration: none; }
@@ -26,7 +33,8 @@
   label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; margin-top: 16px; }
   label:first-of-type { margin-top: 0; }
   input[type=text], input[type=email] { width: 100%; padding: 9px 10px; border: 1px solid var(--line); border-radius: 6px; font-size: 13px; font-family: inherit; background: var(--paper); }
-  button.primary { margin-top: 16px; padding: 10px 18px; background: var(--ink); color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600; }
+  button.primary { margin-top: 16px; padding: 10px 18px; background: #02BFF8; color: #014357; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600; transition: background 0.15s; }
+  button.primary:hover { background: #02A2D3; }
   button.primary:disabled { opacity: 0.5; cursor: default; }
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
   th { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); color: var(--muted); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; }
@@ -35,10 +43,10 @@
   .remove-btn { padding: 4px 10px; border: 1px solid var(--line); border-radius: 5px; background: none; cursor: pointer; font-size: 11px; color: var(--muted); }
   .remove-btn:hover { border-color: var(--critical); color: var(--critical); }
   .empty { color: var(--muted); font-size: 13px; padding: 16px 0; }
-  .you-badge { font-size: 10px; background: #f0f5f3; color: var(--accent); border: 1px solid var(--accent); padding: 1px 6px; border-radius: 99px; margin-left: 6px; font-weight: 500; }
+  .you-badge { font-size: 10px; background: #E1F7FE; color: #017CA1; border: 1px solid #02BFF8; padding: 1px 6px; border-radius: 99px; margin-left: 6px; font-weight: 500; }
   .last-login { font-size: 11px; color: var(--muted); }
   .msg { margin-top: 12px; font-size: 12px; padding: 8px 12px; border-radius: 6px; }
-  .msg.ok  { background: #f0f5f3; color: var(--accent); }
+  .msg.ok  { background: #F3FAE6; color: #547717; }
   .msg.err { background: #fdf2f2; color: var(--critical); }
 </style>
 </head>
