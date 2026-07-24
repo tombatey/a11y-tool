@@ -134,3 +134,79 @@ PostgreSQL starts, migrations run automatically. App at http://localhost:3000.
 
 Three tables: `scans`, `findings`, `scan_errors`.
 Migrations live in `db/schema.sql` — safe to re-run (`CREATE TABLE IF NOT EXISTS`).
+
+---
+
+## Version control & branching strategy
+
+### Initial GitHub setup
+
+```bash
+# On GitHub.com: create a new repo called 'a11y-tool' (private)
+# Then in the project folder:
+
+git init
+git add .
+git commit -m "Initial commit"
+git branch -M main
+git remote add origin https://github.com/webdepend/a11y-tool.git
+git push -u origin main
+
+# Create the develop branch
+git checkout -b develop
+git push -u origin develop
+```
+
+### Branch structure
+
+| Branch | Purpose | Deploys to |
+|--------|---------|------------|
+| `main` | Production-ready code | a11y.webdepend.dev |
+| `develop` | Integration / staging | staging.a11y.webdepend.dev |
+| `feature/*` | Feature development | Local only |
+| `fix/*` | Bug fixes | Local only |
+
+### Day-to-day workflow
+
+```bash
+# 1. Start a new feature
+git checkout develop
+git pull origin develop
+git checkout -b feature/my-feature
+
+# 2. Do work, commit regularly
+git add .
+git commit -m "feat: add my feature"
+
+# 3. Push and open a pull request to develop
+git push origin feature/my-feature
+# On GitHub: open PR from feature/my-feature → develop
+
+# 4. After PR is merged, deploy to staging and test
+git checkout develop
+git pull origin develop
+./scripts/deploy.sh staging
+
+# 5. When ready to release to production
+./scripts/promote.sh        # merges develop → main, creates a tag
+./scripts/deploy.sh production
+```
+
+### Setting up the staging environment (one-time)
+
+1. Add DNS A record: `staging.a11y.webdepend.dev` → `104.248.164.90`
+
+2. Add staging redirect URI to your Google OAuth app:
+   `https://staging.a11y.webdepend.dev/auth/google/callback`
+
+3. SSH into the server and run:
+   ```bash
+   bash /var/www/a11y-tool/scripts/setup-staging.sh
+   ```
+
+4. Create `/var/www/a11y-tool-staging/.env` with the credentials the script prints.
+
+5. Deploy:
+   ```bash
+   ./scripts/deploy.sh staging
+   ```
