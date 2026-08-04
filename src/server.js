@@ -117,7 +117,7 @@ app.post('/api/scan', async (req, res) => {
   if (!['crawl', 'list'].includes(mode))
     return res.status(400).json({ error: "mode must be 'crawl' or 'list'" });
 
-  const job = await createJob({ mode, rootUrl, urls, options });
+  const job = await createJob({ mode, rootUrl, urls, options }, req.user?.email || null);
   runJob(job).catch((err) => console.error(`Job ${job.id} failed:`, err));
   res.status(202).json({ jobId: job.id });
 });
@@ -168,48 +168,119 @@ app.get('/api/scan/:id/export/pdf', async (req, res) => {
 // ─── CSV export ───────────────────────────────────────────────────────────────
 app.get('/api/scan/:id/export/csv', async (req, res) => {
   try {
-    const job = await getJob(req.params.id);
+    const [job, pages] = await Promise.all([
+      getJob(req.params.id),
+      getPages(req.params.id),
+    ]);
     if (!job) return res.status(404).json({ error: 'Job not found' });
 
     const input    = job.input || {};
-    const target   = input.mode === 'crawl' ? input.rootUrl : `URL list (${(input.urls||[]).length} URLs)`;
-    const dateStr  = new Date(job.createdAt).toISOString().slice(0, 10);
+    const findings = job.findings || [];
+    const target   = input.mode === 'crawl'
+      ? (input.rootUrl || '—')
+      : `URL list (${(input.urls || []).length} URL${(input.urls||[]).length===1?'':'s'})`;
+    const dateStr  = new Date(job.createdAt)
+      .toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+    const tags     = (input.options?.tags || []).join(', ') || 'None selected';
+    const rank     = { critical: 4, serious: 3, moderate: 2, minor: 1 };
 
-    const csvEscape = (val) => {
+    // Severity counts
+    const sev = { critical: 0, serious: 0, moderate: 0, minor: 0 };
+    findings.forEach(f => { if (sev[f.impact] !== undefined) sev[f.impact]++; });
+
+    // Type counts
+    const types = { accessibility: 0, html: 0, css: 0 };
+    findings.forEach(f => {
+      if (!f.type || f.type === 'accessibility') types.accessibility++;
+      else if (f.type === 'html-validation')      types.html++;
+      else                                         types.css++;
+    });
+
+    const e = (val) => {          // CSV-escape a value
       const s = String(val ?? '');
-      return s.includes(',') || s.includes('"') || s.includes('\n')
-        ? `"${s.replace(/"/g, '""')}"`
-        : s;
+      return (s.includes(',') || s.includes('"') || s.includes('\n'))
+        ? `"${s.replace(/"/g, '""')}"` : s;
     };
 
+    const row  = (...cols) => cols.map(e).join(',');
+    const gap  = () => '';        // blank separator row
+    const head = (label) => row(label); // section header
+
+    const locationText = (f) => f.location?.line
+      ? `Line ${f.location.line}${f.location.column ? `, Col ${f.location.column}` : ''}`
+      : (f.breadcrumb || []).slice(-3).join(' > ') || f.target_selector || '';
+
+    const sortedFindings = findings
+      .slice()
+      .sort((a, b) => (rank[b.impact] || 0) - (rank[a.impact] || 0));
+
     const lines = [
-      // Metadata header rows
-      ['WebDepend Accessibility Report'],
-      ['Scan Date', dateStr],
-      ['Target',    target],
-      ['Pages Scanned', job.pagesScanned],
-      ['Total Findings', (job.findings || []).length],
-      [],
-      // Column headers
-      ['URL', 'Impact', 'Type', 'Source Tool', 'Rule ID', 'Issue', 'Location', 'Help URL'],
-      // Findings
-      ...(job.findings || [])
-        .sort((a, b) => ({ critical: 4, serious: 3, moderate: 2, minor: 1 }[b.impact] || 0)
-                       - ({ critical: 4, serious: 3, moderate: 2, minor: 1 }[a.impact] || 0))
-        .map(f => {
-          const loc = f.location?.line
-            ? `Line ${f.location.line}${f.location.column ? `, Col ${f.location.column}` : ''}`
-            : (f.breadcrumb || []).slice(-3).join(' > ') || f.target_selector || '';
-          return [f.url, f.impact, f.type, f.source_tool, f.rule_id, f.help || f.description, loc, f.help_url];
-        }),
+      // ── Header ───────────────────────────────────────────────────────────
+      row('WebDepend Accessibility Report'),
+      gap(),
+
+      // ── Scan Details ─────────────────────────────────────────────────────
+      head('SCAN DETAILS'),
+      row('Scan Date',     dateStr),
+      row('Target',        target),
+      row('Mode',          input.mode === 'crawl' ? 'Crawl' : 'URL List'),
+      row('Pages Scanned', job.pagesScanned),
+      row('WCAG Tags',     tags),
+      row('Total Findings', findings.length),
+      row('Status',        job.status),
+      gap(),
+
+      // ── Summary — by severity ─────────────────────────────────────────────
+      head('SUMMARY — BY SEVERITY'),
+      row('Impact', 'Count'),
+      row('Critical', sev.critical),
+      row('Serious',  sev.serious),
+      row('Moderate', sev.moderate),
+      row('Minor',    sev.minor),
+      gap(),
+
+      // ── Summary — by type ─────────────────────────────────────────────────
+      head('SUMMARY — BY CHECK TYPE'),
+      row('Type', 'Count'),
+      ...(types.accessibility ? [row('Accessibility (axe-core)',     types.accessibility)] : []),
+      ...(types.html          ? [row('HTML Validation (W3C Nu)',      types.html)]          : []),
+      ...(types.css           ? [row('CSS Validation / Linting',      types.css)]           : []),
+      gap(),
+
+      // ── Pages scanned ─────────────────────────────────────────────────────
+      ...(pages.length ? [
+        head('PAGES SCANNED'),
+        row('URL', 'Total Findings', 'Critical', 'Serious', 'Moderate', 'Minor'),
+        ...pages.map(p => row(
+          p.url,
+          p.findings_count,
+          p.critical_count,
+          p.serious_count,
+          p.moderate_count,
+          p.minor_count,
+        )),
+        gap(),
+      ] : []),
+
+      // ── Findings ──────────────────────────────────────────────────────────
+      head('FINDINGS'),
+      row('URL', 'Impact', 'Type', 'Source Tool', 'Rule ID', 'Issue', 'Location', 'Help URL'),
+      ...sortedFindings.map(f => row(
+        f.url,
+        f.impact,
+        f.type,
+        f.source_tool,
+        f.rule_id,
+        f.help || f.description,
+        locationText(f),
+        f.help_url,
+      )),
     ];
 
-    const csv = lines.map(row => row.map(csvEscape).join(',')).join('\r\n');
-
-    const filename = `webdepend-a11y-report-${dateStr}.csv`;
+    const filename = `webdepend-a11y-report-${new Date(job.createdAt).toISOString().slice(0, 10)}.csv`;
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-    res.send('\uFEFF' + csv); // BOM for Excel UTF-8 compatibility
+    res.send('\uFEFF' + lines.join('\r\n')); // BOM for Excel UTF-8 compatibility
   } catch (err) {
     console.error('CSV export error:', err.message);
     res.status(500).json({ error: 'Failed to generate CSV' });

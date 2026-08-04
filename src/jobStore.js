@@ -49,12 +49,12 @@ function rowToFinding(row) {
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 
-async function createJob(input) {
+async function createJob(input, startedByEmail = null) {
   const res = await pool.query(
-    `INSERT INTO scans (mode, input)
-     VALUES ($1, $2)
+    `INSERT INTO scans (mode, input, started_by_email)
+     VALUES ($1, $2, $3)
      RETURNING *`,
-    [input.mode, JSON.stringify(input)]
+    [input.mode, JSON.stringify(input), startedByEmail]
   );
   return rowToJob(res.rows[0]);
 }
@@ -171,6 +171,39 @@ async function addPageResult(id, pageResult) {
   }
 }
 
+async function getScanEmailData(id) {
+  const res = await pool.query(
+    `SELECT s.started_by_email, s.pages_scanned, s.status, s.input,
+       COUNT(f.id)::int                                        AS findings_count,
+       COUNT(CASE WHEN f.impact='critical' THEN 1 END)::int   AS critical_count,
+       COUNT(CASE WHEN f.impact='serious'  THEN 1 END)::int   AS serious_count,
+       COUNT(CASE WHEN f.impact='moderate' THEN 1 END)::int   AS moderate_count,
+       COUNT(CASE WHEN f.impact='minor'    THEN 1 END)::int   AS minor_count
+     FROM scans s
+     LEFT JOIN findings f ON f.scan_id = s.id
+     WHERE s.id = $1
+     GROUP BY s.id`,
+    [id]
+  );
+  if (!res.rows[0]) return null;
+  const r     = res.rows[0];
+  const input = r.input || {};
+  return {
+    toEmail:      r.started_by_email,
+    scanId:       id,
+    status:       r.status,
+    targetUrl:    input.mode === 'crawl'
+                    ? input.rootUrl
+                    : `URL list (${(input.urls || []).length} URLs)`,
+    pagesScanned:  r.pages_scanned,
+    findingsCount: r.findings_count,
+    criticalCount: r.critical_count,
+    seriousCount:  r.serious_count,
+    moderateCount: r.moderate_count,
+    minorCount:    r.minor_count,
+  };
+}
+
 async function getPages(scanId) {
   const res = await pool.query(
     `SELECT url, findings_count, critical_count, serious_count, moderate_count, minor_count, scanned_at
@@ -210,6 +243,7 @@ module.exports = {
   addPageResult,
   addError,
   getPages,
+  getScanEmailData,
   requestStop,
   isStopRequested,
 };
