@@ -103,7 +103,7 @@ function generateReportHtml(job, pages = []) {
       <td style="vertical-align:top;padding:6px 8px">${typeBadge(f.type)}</td>
       <td style="font-size:11px;color:#017CA1;word-break:break-all;overflow-wrap:break-word;vertical-align:top;padding:6px 8px">${escHtml(f.url)}</td>
       <td style="font-size:11px;font-family:monospace;color:#334155;word-break:break-all;vertical-align:top;padding:6px 8px">${escHtml(f.rule_id || '')}</td>
-      <td style="font-size:11px;color:#334155;vertical-align:top;padding:6px 8px">${escHtml(f.help || f.description || '')}</td>
+      <td style="font-size:11px;color:#334155;vertical-align:top;padding:6px 8px">${escHtml(f.help || f.description || '')}${f.help_url ? ` — <a href="${escHtml(f.help_url)}" style="color:#017CA1">details</a>` : ''}</td>
       <td style="font-size:11px;color:#64748B;word-break:break-word;vertical-align:top;padding:6px 8px">${escHtml(locationText(f))}</td>
     </tr>`).join('');
 
@@ -158,10 +158,10 @@ function generateReportHtml(job, pages = []) {
 
   /* Findings table — fixed layout so URL column gets guaranteed width */
   .findings-table { table-layout: fixed; }
-  .findings-table .col-impact { width: 9%; }
+  .findings-table .col-impact { width: 12%; }
   .findings-table .col-type   { width: 6%; }
-  .findings-table .col-url    { width: 27%; }
-  .findings-table .col-rule   { width: 14%; }
+  .findings-table .col-url    { width: 25%; }
+  .findings-table .col-rule   { width: 13%; }
   .findings-table .col-issue  { width: 29%; }
   .findings-table .col-loc    { width: 15%; }
 
@@ -241,7 +241,7 @@ ${pages.length ? `
 <div class="section">
   <h2>Pages Scanned (${pages.length})</h2>
   <table>
-    <thead><tr><th>URL</th><th>Findings (links jump to findings section)</th></tr></thead>
+    <thead><tr><th>URL</th><th>Findings</th></tr></thead>
     <tbody>${pageRows}</tbody>
   </table>
 </div>` : ''}
