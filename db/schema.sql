@@ -79,3 +79,6 @@ CREATE TABLE IF NOT EXISTS pages (
 );
 
 CREATE INDEX IF NOT EXISTS pages_scan_id_idx ON pages(scan_id);
+
+-- Add scan initiator email (safe to re-run on existing databases)
+ALTER TABLE scans ADD COLUMN IF NOT EXISTS started_by_email TEXT;

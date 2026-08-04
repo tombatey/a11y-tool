@@ -11,8 +11,10 @@ const {
   updateScanCounts,
   addPageResult,
   addError,
+  getScanEmailData,
   isStopRequested,
 } = require('./jobStore');
+const { sendScanCompleteEmail } = require('./email');
 
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '..', 'data');
 
@@ -152,6 +154,11 @@ async function runJob(job) {
     await context.close().catch(() => {});
     await browser.close().catch(() => {});
   }
+
+  // Send completion notification — runs after browser is closed, never blocks
+  getScanEmailData(id)
+    .then(data => sendScanCompleteEmail(data))
+    .catch(err => console.error('Notification error:', err.message));
 }
 
 module.exports = { runJob };
