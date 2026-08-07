@@ -60,6 +60,9 @@ Paste:
 DATABASE_URL=postgresql://a11y_user:YOUR_GENERATED_PASS@localhost:5432/a11y_tool
 DATA_DIR=/var/data/a11y-tool
 PORT=3000
+# Required only if you'll scan password-protected sites (basic auth / login form) —
+# generate with: openssl rand -hex 32
+CREDENTIALS_ENCRYPTION_KEY=
 ```
 
 Then restart the app:
@@ -169,7 +172,7 @@ git push -u origin develop
 ### Day-to-day workflow
 
 ```bash
-# 1. Start a new feature
+# 1. Start a new feature branch from develop
 git checkout develop
 git pull origin develop
 git checkout -b feature/my-feature
@@ -178,19 +181,27 @@ git checkout -b feature/my-feature
 git add .
 git commit -m "feat: add my feature"
 
-# 3. Push and open a pull request to develop
-git push origin feature/my-feature
-# On GitHub: open PR from feature/my-feature → develop
-
-# 4. After PR is merged, deploy to staging and test
+# 3. Merge feature branch into develop when done
 git checkout develop
 git pull origin develop
+git merge feature/my-feature
+git push origin develop
+
+# 4. Delete the feature branch (no longer needed)
+git branch -d feature/my-feature
+git push origin --delete feature/my-feature
+
+# 5. Deploy to staging and test
 ./scripts/deploy.sh staging
 
-# 5. When ready to release to production
-./scripts/promote.sh        # merges develop → main, creates a tag
+# 6. When happy with staging, release to production
+./scripts/promote.sh        # merges develop → main, creates a version tag
 ./scripts/deploy.sh production
 ```
+
+> **Note:** `promote.sh` only handles `develop → main`. Steps 1–4 (the feature
+> branch lifecycle) happen before that, and are your responsibility to complete
+> before deploying to staging.
 
 ### Setting up the staging environment (one-time)
 

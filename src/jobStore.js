@@ -1,4 +1,36 @@
 const pool = require('./db');
+const { encrypt } = require('./crypto');
+
+const REDACTED = '••••••••';
+
+// Deep-clones input and encrypts any target-site auth password before it's
+// persisted — the plaintext caller-supplied `input` is left untouched so
+// createJob() can hand the running job usable credentials without ever
+// reading ciphertext back out of the DB.
+function encryptAuthForStorage(input) {
+  if (!input.auth || input.auth.type === 'none') return input;
+
+  const stored = { ...input, auth: { ...input.auth } };
+  if (stored.auth.type === 'basic' && stored.auth.basic) {
+    stored.auth.basic = { ...stored.auth.basic, password: encrypt(stored.auth.basic.password) };
+  }
+  if (stored.auth.type === 'form' && stored.auth.form) {
+    stored.auth.form = { ...stored.auth.form, password: encrypt(stored.auth.form.password) };
+  }
+  return stored;
+}
+
+// Redacts target-site auth passwords from a DB-sourced input before it's
+// returned via the API — callers should never see a password (plaintext or
+// ciphertext) once a scan has been submitted.
+function redactAuth(input) {
+  if (!input?.auth || input.auth.type === 'none') return input;
+
+  const redacted = { ...input, auth: { ...input.auth } };
+  if (redacted.auth.basic) redacted.auth.basic = { ...redacted.auth.basic, password: REDACTED };
+  if (redacted.auth.form)  redacted.auth.form  = { ...redacted.auth.form, password: REDACTED };
+  return redacted;
+}
 
 // In-memory Set for fast synchronous stop checks — the DB flag persists
 // across restarts but in-flight scans only need the in-memory read path.
@@ -10,7 +42,7 @@ function rowToJob(row, findings = [], errors = []) {
   return {
     id:               row.id,
     status:           row.status,
-    input:            row.input,
+    input:            redactAuth(row.input),
     pagesDiscovered:  row.pages_discovered,
     pagesScanned:     row.pages_scanned,
     stopRequested:    row.stop_requested,
@@ -54,9 +86,25 @@ async function createJob(input, startedByEmail = null) {
     `INSERT INTO scans (mode, input, started_by_email)
      VALUES ($1, $2, $3)
      RETURNING *`,
-    [input.mode, JSON.stringify(input), startedByEmail]
+    [input.mode, JSON.stringify(encryptAuthForStorage(input)), startedByEmail]
   );
-  return rowToJob(res.rows[0]);
+  // Build the returned job from the plaintext `input` we were given, not the
+  // (now-encrypted) row — the caller (server.js) immediately hands this to
+  // runJob(), which needs usable credentials and should never have to
+  // decrypt anything back out of the DB.
+  const row = res.rows[0];
+  return {
+    id:              row.id,
+    status:          row.status,
+    input,
+    pagesDiscovered: row.pages_discovered,
+    pagesScanned:    row.pages_scanned,
+    stopRequested:   row.stop_requested,
+    createdAt:       row.created_at,
+    updatedAt:       row.updated_at,
+    findings:        [],
+    errors:          [],
+  };
 }
 
 async function getJob(id) {
@@ -85,7 +133,7 @@ async function listJobs() {
   return res.rows.map((row) => ({
     id:              row.id,
     status:          row.status,
-    input:           row.input,
+    input:           redactAuth(row.input),
     createdAt:       row.created_at,
     pagesDiscovered: row.pages_discovered,
     pagesScanned:    row.pages_scanned,

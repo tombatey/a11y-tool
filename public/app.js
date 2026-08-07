@@ -94,6 +94,46 @@ const statusLine = document.getElementById('statusLine');
 const statusText = document.getElementById('statusText');
 const resultsArea = document.getElementById('resultsArea');
 
+// Site login (target-site auth) — show only the fields relevant to the chosen type
+const authTypeSelect  = document.getElementById('authType');
+const basicAuthFields = document.getElementById('basicAuthFields');
+const formAuthFields  = document.getElementById('formAuthFields');
+authTypeSelect.addEventListener('change', () => {
+  basicAuthFields.style.display = authTypeSelect.value === 'basic' ? 'block' : 'none';
+  formAuthFields.style.display  = authTypeSelect.value === 'form'  ? 'block' : 'none';
+});
+
+// Builds the `auth` field for the scan request body, or null if not configured
+// (and not valid) — never persisted/reused, entered fresh for each scan.
+function buildAuthPayload() {
+  const type = authTypeSelect.value;
+  if (type === 'none') return { auth: null, error: null };
+
+  if (type === 'basic') {
+    const username = document.getElementById('basicUsername').value.trim();
+    const password = document.getElementById('basicPassword').value;
+    if (!username || !password) return { auth: null, error: 'Enter the basic auth username and password, or set Site login back to None.' };
+    return { auth: { type: 'basic', basic: { username, password } }, error: null };
+  }
+
+  // type === 'form'
+  const loginUrl          = document.getElementById('loginUrl').value.trim();
+  const usernameSelector  = document.getElementById('usernameSelector').value.trim();
+  const passwordSelector  = document.getElementById('passwordSelector').value.trim();
+  const submitSelector    = document.getElementById('submitSelector').value.trim();
+  const username           = document.getElementById('formUsername').value.trim();
+  const password           = document.getElementById('formPassword').value;
+  const waitForSelector   = document.getElementById('waitForSelector').value.trim();
+
+  if (!loginUrl || !usernameSelector || !passwordSelector || !submitSelector || !username || !password) {
+    return { auth: null, error: 'Fill in the login URL, both field selectors, the submit selector, and the username/password — or set Site login back to None.' };
+  }
+  return {
+    auth: { type: 'form', form: { loginUrl, usernameSelector, passwordSelector, submitSelector, username, password, waitForSelector: waitForSelector || undefined } },
+    error: null,
+  };
+}
+
 modeCrawlBtn.addEventListener('click', () => setMode('crawl'));
 modeListBtn.addEventListener('click', () => setMode('list'));
 
@@ -167,18 +207,21 @@ async function startScan() {
     return alert('Select at least one WCAG tag, or enable HTML or CSS validation.');
   }
 
+  const { auth, error: authError } = buildAuthPayload();
+  if (authError) return alert(authError);
+
   let body;
   if (mode === 'crawl') {
     const rootUrl  = document.getElementById('rootUrl').value.trim();
     if (!rootUrl) return alert('Enter a site root URL.');
     const maxPages = parseInt(document.getElementById('maxPages').value, 10) || 50;
     const maxDepth = parseInt(document.getElementById('maxDepth').value, 10) || 3;
-    body = { mode: 'crawl', rootUrl, options: { maxPages, maxDepth, tags, captureScreenshots, validateHtml, validateCss } };
+    body = { mode: 'crawl', rootUrl, options: { maxPages, maxDepth, tags, captureScreenshots, validateHtml, validateCss }, auth };
   } else {
     const raw = document.getElementById('urlList').value.trim();
     if (!raw) return alert('Enter at least one URL.');
     const urls = raw.split('\n').map((s) => s.trim()).filter(Boolean);
-    body = { mode: 'list', urls, options: { tags, captureScreenshots, validateHtml, validateCss } };
+    body = { mode: 'list', urls, options: { tags, captureScreenshots, validateHtml, validateCss }, auth };
   }
 
   startBtn.disabled = true;
@@ -240,6 +283,7 @@ function renderJob(job) {
 function describeStatus(job) {
   switch (job.status) {
     case 'queued': return 'Queued…';
+    case 'authenticating': return 'Logging in…';
     case 'crawling': return `Crawling — ${job.pagesScanned} page(s) scanned so far…`;
     case 'scanning': return `Scanning — ${job.pagesScanned} page(s) scanned, ${job.findings.length} finding(s) so far…`;
     case 'done': return `Done — ${job.pagesScanned} page(s) scanned, ${job.findings.length} finding(s).`;

@@ -108,8 +108,31 @@ app.delete('/api/users/:id', async (req, res) => {
 });
 
 // ─── Scan API ─────────────────────────────────────────────────────────────────
+// Validates the optional target-site auth block. Returns an error string,
+// or null if the auth block (or its absence) is valid.
+function validateAuth(auth) {
+  if (auth == null) return null;
+  if (!['none', 'basic', 'form'].includes(auth.type))
+    return "auth.type must be 'none', 'basic', or 'form'";
+
+  if (auth.type === 'basic') {
+    const { username, password } = auth.basic || {};
+    if (!username || !password)
+      return 'auth.basic.username and auth.basic.password are required for basic auth';
+  }
+
+  if (auth.type === 'form') {
+    const required = ['loginUrl', 'usernameSelector', 'passwordSelector', 'submitSelector', 'username', 'password'];
+    const missing  = required.filter((key) => !auth.form?.[key]);
+    if (missing.length > 0)
+      return `auth.form is missing required field(s): ${missing.join(', ')}`;
+  }
+
+  return null;
+}
+
 app.post('/api/scan', async (req, res) => {
-  const { mode, rootUrl, urls, options } = req.body || {};
+  const { mode, rootUrl, urls, options, auth } = req.body || {};
   if (mode === 'crawl' && !rootUrl)
     return res.status(400).json({ error: 'rootUrl is required for crawl mode' });
   if (mode === 'list' && (!Array.isArray(urls) || urls.length === 0))
@@ -117,7 +140,10 @@ app.post('/api/scan', async (req, res) => {
   if (!['crawl', 'list'].includes(mode))
     return res.status(400).json({ error: "mode must be 'crawl' or 'list'" });
 
-  const job = await createJob({ mode, rootUrl, urls, options }, req.user?.email || null);
+  const authError = validateAuth(auth);
+  if (authError) return res.status(400).json({ error: authError });
+
+  const job = await createJob({ mode, rootUrl, urls, options, auth }, req.user?.email || null);
   runJob(job).catch((err) => console.error(`Job ${job.id} failed:`, err));
   res.status(202).json({ jobId: job.id });
 });

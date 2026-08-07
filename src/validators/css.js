@@ -33,13 +33,15 @@ async function extractStylesheets(page, pageUrl) {
     (els) => els.map((el) => el.textContent || '')
   ).catch(() => []);
 
-  // Fetch external stylesheet content (Playwright's network context)
+  // Fetch external stylesheet content via the page's own request context
+  // (page.request) rather than a bare global fetch — this shares the
+  // browser context's cookies/httpCredentials, so stylesheets on
+  // password-protected pages (basic auth or form-login sessions) are
+  // fetched authenticated instead of 401ing.
   const external = await Promise.all(
     externalUrls.map(async (url) => {
       try {
-        const controller = new AbortController();
-        setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-        const res     = await fetch(url, { signal: controller.signal });
+        const res     = await page.request.get(url, { timeout: FETCH_TIMEOUT_MS });
         const content = await res.text();
         return { url, content };
       } catch {
