@@ -50,6 +50,14 @@
   .logout-btn:hover { border-color: var(--ink); color: var(--ink); }
 
   main { max-width: 1040px; margin: 0 auto; padding: 32px 32px 80px; }
+  footer.app-footer {
+    max-width: 1040px; margin: 0 auto; padding: 16px 32px 32px;
+    display: flex; align-items: center; justify-content: space-between;
+    flex-wrap: wrap; gap: 8px;
+    font-size: 11px; color: var(--muted);
+  }
+  footer.app-footer a { color: var(--muted); text-decoration: none; }
+  footer.app-footer a:hover { color: var(--ink); text-decoration: underline; }
 
   .panel {
     background: #fff;
@@ -452,6 +460,12 @@
   <img id="lightboxImg" src="" alt="Element screenshot" onclick="event.stopPropagation()" />
 </div>
 
+<footer class="app-footer">
+  <span>A <a href="https://www.webdepend.dev/">WebDepend Labs</a> tool</span>
+  <a id="versionLink" href="/changelog">v…</a>
+  <span>© 2026 WebDepend Ltd.</span>
+</footer>
+<script src="version-footer.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

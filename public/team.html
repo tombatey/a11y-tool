@@ -28,6 +28,14 @@
   .logout-btn { padding: 6px 12px; border: 1px solid var(--line); border-radius: 6px; background: none; cursor: pointer; font-size: 12px; color: var(--muted); font-family: inherit; }
   .logout-btn:hover { border-color: var(--ink); color: var(--ink); }
   main { max-width: 640px; margin: 0 auto; padding: 32px 32px 80px; }
+  footer.app-footer {
+    max-width: 640px; margin: 0 auto; padding: 16px 32px 32px;
+    display: flex; align-items: center; justify-content: space-between;
+    flex-wrap: wrap; gap: 8px;
+    font-size: 11px; color: var(--muted);
+  }
+  footer.app-footer a { color: var(--muted); text-decoration: none; }
+  footer.app-footer a:hover { color: var(--ink); text-decoration: underline; }
   .panel { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 24px; margin-bottom: 24px; }
   .panel h2 { margin: 0 0 16px; font-size: 14px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
   label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; margin-top: 16px; }
@@ -161,5 +169,11 @@ function escHtml(str) {
   return String(str ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 </script>
+<footer class="app-footer">
+  <span>A <a href="https://www.webdepend.dev/">WebDepend Labs</a> tool</span>
+  <a id="versionLink" href="/changelog">v…</a>
+  <span>© 2026 WebDepend Ltd.</span>
+</footer>
+<script src="version-footer.js"></script>
 </body>
 </html>

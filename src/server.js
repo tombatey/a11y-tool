@@ -8,6 +8,8 @@ const { passport, requireAuth } = require('./auth');
 const { createJob, getJob, listJobs, requestStop, getPages } = require('./jobStore');
 const { runJob }   = require('./orchestrator');
 const { generateReportHtml } = require('./report');
+const { generateChangelogHtml } = require('./changelogPage');
+const { readChangelog, getLatestRelease } = require('./changelog');
 
 const app      = express();
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '..', 'data');
@@ -53,6 +55,35 @@ app.post('/auth/logout', (req, res, next) => {
     if (err) return next(err);
     res.redirect('/login');
   });
+});
+
+// ─── Changelog (public) ─────────────────────────────────────────────────────
+app.get('/changelog', (_req, res) => {
+  res.type('html').send(generateChangelogHtml());
+});
+
+app.get('/api/changelog', (_req, res) => {
+  try {
+    res.json(readChangelog());
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to read changelog' });
+  }
+});
+
+app.get('/api/version', (_req, res) => {
+  try {
+    const latest = getLatestRelease();
+    if (!latest) return res.status(500).json({ error: 'No release information available' });
+    res.json({ version: latest.version, date: latest.date });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to read version' });
+  }
+});
+
+// Shared version-footer script — public because login.html (also public) needs it.
+app.get('/version-footer.js', (_req, res) => {
+  res.type('application/javascript')
+    .sendFile(path.join(__dirname, '..', 'public', 'version-footer.js'));
 });
 
 // ─── Static files — login page is public, everything else protected ───────────
