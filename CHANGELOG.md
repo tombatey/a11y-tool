@@ -14,7 +14,40 @@ then leaves `[Unreleased]` empty for the next cycle.
 ## [Unreleased]
 
 - Add public `/changelog` page, version footer on every page, and an automatic Slack release announcement to `#webdepend-labs`.
+- Ability to scan password-protected sites - basic auth (.htaccess style) for staging or test sites and login form access for live websites and web applications.
 
-## [0.2.0] - 2026-08-08
+## [0.2.2] - 2026-08-04
 
-- Historical note: changelog tracking began with this release — changes before this point weren't recorded individually. This is a backfilled placeholder for the version live when the file was introduced.
+- Improved CSV and PDF exports.
+
+## [0.2.1] - 2026-07-20
+
+- Styling updates.
+
+## [0.2.0] - 2026-07-18
+
+- Ability to rescan previous scans - prepopulates the scanner fields with the same URLs and settings as the past scan.
+- Ability to export results by csv or pdf.
+
+## [0.1.1] - 2026-07-17
+
+- Scanned page list stored for reference during scanning or when viewing results.
+
+## [0.1.0] - 2026-07-10
+
+- Added HTML validation using Nu markup checker.
+- Added CSS validation using W3C Compliance and linting.
+- Google OAuth authentication for WebDepend team members.
+- Full scan history with per-scan detail views.
+- Severity and type filtering on results.
+- All findings persisted to PostgreSQL database.
+
+## [0.0.2] - 2026-07-04
+
+- Proof of concept deployed to a11y.webdepend.dev.
+- Ability to stop in progress scans.
+- Ability to capture screenshots of issues.
+
+## [0.0.1] - 2026-06-30
+
+- Initial proof of concept.
