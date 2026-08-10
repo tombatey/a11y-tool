@@ -32,6 +32,24 @@ fi
 
 if [ -z "$VERSION" ]; then echo "Version is required."; exit 1; fi
 
+# Verify there's something to release — the [Unreleased] section is what
+# gets stamped onto the new version and announced in Slack.
+CHANGELOG="CHANGELOG.md"
+if [ ! -f "$CHANGELOG" ]; then
+  echo "⚠  $CHANGELOG not found."
+  exit 1
+fi
+
+UNRELEASED_BODY=$(awk '/^## \[Unreleased\]/{flag=1; next} /^## /{flag=0} flag' "$CHANGELOG")
+UNRELEASED_TRIMMED=$(echo "$UNRELEASED_BODY" | sed '/^[[:space:]]*$/d')
+
+if [ -z "$UNRELEASED_TRIMMED" ]; then
+  echo "⚠  The [Unreleased] section in $CHANGELOG is empty."
+  echo "   Add release notes there before promoting — there'd be nothing to show"
+  echo "   on /changelog or announce in Slack for v$VERSION."
+  exit 1
+fi
+
 echo ""
 echo "→ Pulling latest develop..."
 git pull origin develop
@@ -50,9 +68,25 @@ echo "→ Pushing main and tag to GitHub..."
 git push origin main
 git push origin "v$VERSION"
 
+echo "→ Stamping $CHANGELOG for v$VERSION..."
+RELEASE_DATE=$(date +%F)
+
+# Insert a new dated heading right after "## [Unreleased]", so the notes
+# that were under Unreleased now fall under the new version heading, and
+# Unreleased itself is left empty for the next cycle.
+awk -v ver="$VERSION" -v date="$RELEASE_DATE" '
+  /^## \[Unreleased\]/ {
+    print
+    print ""
+    print "## [" ver "] - " date
+    next
+  }
+  { print }
+' "$CHANGELOG" > "$CHANGELOG.tmp" && mv "$CHANGELOG.tmp" "$CHANGELOG"
+
 # Update package.json version
 npm version "$VERSION" --no-git-tag-version > /dev/null 2>&1 || true
-git add package.json package-lock.json 2>/dev/null || true
+git add package.json package-lock.json "$CHANGELOG" 2>/dev/null || true
 git diff-index --quiet HEAD -- || git commit -m "chore: bump version to $VERSION"
 git push origin main
 

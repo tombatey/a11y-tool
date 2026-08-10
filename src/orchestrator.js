@@ -6,6 +6,7 @@ const { crawlSite, normalizeUrl } = require('./crawler');
 const { scanPageWithAxe } = require('./scanner');
 const { validateHtml }    = require('./validators/html');
 const { validateCss }     = require('./validators/css');
+const { basicAuthContextOptions, performFormLogin } = require('./authTarget');
 const {
   setStatus,
   updateScanCounts,
@@ -96,8 +97,10 @@ async function appendResult(scanId, result) {
 async function runJob(job) {
   const { id, input } = job;
   const opts          = input.options || {};
+  const auth          = input.auth || { type: 'none' };
   const browser       = await chromium.launch();
-  const context       = await browser.newContext();
+  const contextOptions = auth.type === 'basic' ? basicAuthContextOptions(auth.basic) : {};
+  const context        = await browser.newContext(contextOptions);
   const shouldStop    = () => isStopRequested(id);
 
   // Tracks stylesheet URLs already validated — shared across all pages in this
@@ -105,6 +108,14 @@ async function runJob(job) {
   const seenStylesheets = new Set();
 
   try {
+    if (auth.type === 'form') {
+      await setStatus(id, 'authenticating');
+      // Let failures bubble to the outer catch below — it already records the
+      // error and sets status 'error', and we want that to short-circuit before
+      // any crawling/scanning starts rather than proceeding unauthenticated.
+      await performFormLogin(context, auth.form);
+    }
+
     if (input.mode === 'crawl') {
       await setStatus(id, 'crawling');
 

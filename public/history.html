@@ -32,6 +32,14 @@
   .logout-btn:hover { border-color: var(--ink); color: var(--ink); }
 
   main { max-width: 1040px; margin: 0 auto; padding: 32px 32px 80px; }
+  footer.app-footer {
+    max-width: 1040px; margin: 0 auto; padding: 16px 32px 32px;
+    display: flex; align-items: center; justify-content: space-between;
+    flex-wrap: wrap; gap: 8px;
+    font-size: 11px; color: var(--muted);
+  }
+  footer.app-footer a { color: var(--muted); text-decoration: none; }
+  footer.app-footer a:hover { color: var(--ink); text-decoration: underline; }
 
   /* ── List view ── */
   .list-header { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 16px; }
@@ -551,5 +559,11 @@ function formatDate(iso) {
   return { dateStr, timeStr };
 }
 </script>
+<footer class="app-footer">
+  <span>A <a href="https://www.webdepend.dev/" target="_blank" rel="noopener noreferrer">WebDepend Labs</a> tool</span>
+  <a id="versionLink" href="/changelog">v…</a>
+  <span>© 2026 WebDepend Ltd.</span>
+</footer>
+<script src="version-footer.js"></script>
 </body>
 </html>

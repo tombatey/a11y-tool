@@ -21,6 +21,6 @@
     "playwright": "^1.48.0",
     "stylelint": "^16.0.0",
     "stylelint-config-standard": "^36.0.0",
-    "uuid": "^9.0.1"
+    "uuid": "^11.1.1"
   }
 }

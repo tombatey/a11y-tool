@@ -50,6 +50,14 @@
   .logout-btn:hover { border-color: var(--ink); color: var(--ink); }
 
   main { max-width: 1040px; margin: 0 auto; padding: 32px 32px 80px; }
+  footer.app-footer {
+    max-width: 1040px; margin: 0 auto; padding: 16px 32px 32px;
+    display: flex; align-items: center; justify-content: space-between;
+    flex-wrap: wrap; gap: 8px;
+    font-size: 11px; color: var(--muted);
+  }
+  footer.app-footer a { color: var(--muted); text-decoration: none; }
+  footer.app-footer a:hover { color: var(--ink); text-decoration: underline; }
 
   .panel {
     background: #fff;
@@ -69,7 +77,7 @@
 
   label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; margin-top: 16px; }
   label:first-child { margin-top: 0; }
-  input[type=text], textarea {
+  input[type=text], input[type=password], textarea, select {
     width: 100%; padding: 9px 10px; border: 1px solid var(--line); border-radius: 6px; font-size: 13px;
     font-family: inherit; background: var(--paper);
   }
@@ -77,6 +85,12 @@
   .row { display: flex; gap: 16px; margin-top: 16px; }
   .row > div { flex: 1; }
   .row > div label { margin-top: 0; }
+  #basicAuthFields, #formAuthFields { margin-top: 16px; }
+  .field-hint { font-size: 11px; color: var(--muted); margin-top: 4px; }
+  .field-hint code {
+    font-family: ui-monospace, SFMono-Regular, monospace; background: var(--paper);
+    border: 1px solid var(--line); padding: 1px 4px; border-radius: 3px;
+  }
 
   button.primary {
     margin-top: 16px; padding: 10px 18px;
@@ -312,6 +326,68 @@
 
     <hr class="divider" />
 
+    <div class="tag-section-label">Site login</div>
+    <label for="authType">Password protection</label>
+    <select id="authType">
+      <option value="none" selected>None</option>
+      <option value="basic">HTTP Basic Auth (.htaccess-style)</option>
+      <option value="form">Login form</option>
+    </select>
+
+    <div id="basicAuthFields" style="display:none;">
+      <div class="row">
+        <div>
+          <label for="basicUsername">Username</label>
+          <input type="text" id="basicUsername" autocomplete="off" />
+        </div>
+        <div>
+          <label for="basicPassword">Password</label>
+          <input type="password" id="basicPassword" autocomplete="off" />
+        </div>
+      </div>
+      <div class="field-hint">The credentials your staging host prompts for in a browser popup before showing any page.</div>
+    </div>
+
+    <div id="formAuthFields" style="display:none;">
+      <label for="loginUrl">Login page URL</label>
+      <input type="text" id="loginUrl" placeholder="https://example.com/login" />
+
+      <div class="row">
+        <div>
+          <label for="usernameSelector">Username field selector</label>
+          <input type="text" id="usernameSelector" placeholder="#username" />
+        </div>
+        <div>
+          <label for="passwordSelector">Password field selector</label>
+          <input type="text" id="passwordSelector" placeholder="#password" />
+        </div>
+      </div>
+      <div class="field-hint">
+        CSS selectors — right-click the field in DevTools → <strong>Copy → Copy selector</strong>,
+        e.g. <code>#username</code> or <code>input[name="password"]</code>.
+      </div>
+
+      <label for="submitSelector">Submit button selector</label>
+      <input type="text" id="submitSelector" placeholder="button[type=submit]" />
+
+      <div class="row">
+        <div>
+          <label for="formUsername">Username</label>
+          <input type="text" id="formUsername" autocomplete="off" />
+        </div>
+        <div>
+          <label for="formPassword">Password</label>
+          <input type="password" id="formPassword" autocomplete="off" />
+        </div>
+      </div>
+
+      <label for="waitForSelector">Wait for this element after login <span style="text-transform:none;">(optional)</span></label>
+      <input type="text" id="waitForSelector" placeholder="e.g. #logout-link" />
+      <div class="field-hint">Confirms login succeeded before the scan starts — leave blank to just wait for the page to navigate.</div>
+    </div>
+
+    <hr class="divider" />
+
     <div class="tag-section-label">WCAG compliance level</div>
     <div class="tag-grid" id="tagGrid">
       <label class="tag-chip checked">
@@ -384,6 +460,12 @@
   <img id="lightboxImg" src="" alt="Element screenshot" onclick="event.stopPropagation()" />
 </div>
 
+<footer class="app-footer">
+  <span>A <a href="https://www.webdepend.dev/" target="_blank" rel="noopener noreferrer">WebDepend Labs</a> tool</span>
+  <a id="versionLink" href="/changelog">v…</a>
+  <span>© 2026 WebDepend Ltd.</span>
+</footer>
+<script src="version-footer.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

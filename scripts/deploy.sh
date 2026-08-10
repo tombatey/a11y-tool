@@ -79,6 +79,12 @@ else
 fi
 echo ""
 
+# Announce the release in Slack — production only, never staging.
+if [ "$ENVIRONMENT" = "production" ]; then
+  echo "→ Posting release announcement to Slack..."
+  node scripts/notify-slack-release.js || echo "⚠  Slack announcement failed — deploy itself succeeded, check the warning above."
+fi
+
 # Warn if .env is missing
 ssh "$SERVER" test -f "$APP_DIR/.env" 2>/dev/null || {
   echo "⚠  No .env found at $APP_DIR/.env"
