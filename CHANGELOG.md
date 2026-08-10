@@ -13,6 +13,8 @@ then leaves `[Unreleased]` empty for the next cycle.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-10
+
 - Add public `/changelog` page, version footer on every page, and an automatic Slack release announcement to `#webdepend-labs`.
 - Ability to scan password-protected sites - basic auth (.htaccess style) for staging or test sites and login form access for live websites and web applications.
 
