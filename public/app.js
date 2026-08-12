@@ -154,7 +154,10 @@ document.querySelectorAll('.tag-chip input[type=checkbox]').forEach((checkbox) =
 });
 
 function getSelectedTags() {
-  return Array.from(document.querySelectorAll('.tag-chip input[type=checkbox]:checked'))
+  // Scoped to #ruleTagsSection so the HTML/CSS validation and screenshot
+  // chips (which share .tag-chip styling but aren't WCAG/axe rule tags, and
+  // have no `value` attribute) never leak in as a literal "on" tag.
+  return Array.from(document.querySelectorAll('#ruleTagsSection input[type=checkbox]:checked'))
     .map((cb) => cb.value);
 }
 
@@ -294,12 +297,17 @@ function describeStatus(job) {
 }
 
 function renderResults(job) {
-  if (job.findings.length === 0 && !['done', 'stopped'].includes(job.status)) {
-    resultsArea.innerHTML = '<div class="empty">Scan running, no findings yet…</div>';
-    return;
-  }
-  if (job.findings.length === 0 && ['done', 'stopped'].includes(job.status)) {
-    resultsArea.innerHTML = '<div class="empty">No violations found. Nice.</div>';
+  const findingsEmpty = job.findings.length === 0;
+  const emptyFindingsMessage = !['done', 'stopped'].includes(job.status)
+    ? '<div class="empty">Scan running, no findings yet…</div>'
+    : '<div class="empty">No violations found. Nice.</div>';
+
+  // Truly nothing to show yet (no pages visited, no findings) — keep the
+  // original single-message empty state. Once at least one page has been
+  // scanned, always render the summary/pages-toggle scaffold below, even
+  // with zero findings, since "Show pages scanned" is independent of findings.
+  if (findingsEmpty && job.pagesScanned === 0) {
+    resultsArea.innerHTML = emptyFindingsMessage;
     return;
   }
 
@@ -343,7 +351,7 @@ function renderResults(job) {
         <td><span class="type-badge ${f.type}">${typeLabel(typeGroup(f.type))}</span>${escapeHtml(f.rule_id)}</td>
         <td class="url-cell">${escapeHtml(f.url)}</td>
         <td class="location-cell">${renderLocation(f)}</td>
-        <td>${escapeHtml(f.help)} — <a href="${escapeHtml(f.help_url)}" target="_blank" rel="noopener">details</a></td>
+        <td>${escapeHtml(f.help)}${f.help_url ? ` — <a href="${escapeHtml(f.help_url)}" target="_blank" rel="noopener">details</a>` : ''}${findingTagPills(f)}</td>
       </tr>`).join('');
 
   const exportBar = `
@@ -376,10 +384,11 @@ function renderResults(job) {
     </div>
     <div id="pagesPanel" style="display:${pagesVisible ? 'block' : 'none'}"></div>
     ${urlFilterBar}
+    ${findingsEmpty ? emptyFindingsMessage : `
     <table>
       <thead><tr><th>Impact</th><th>Rule</th><th>URL</th><th>Location</th><th>Issue</th></tr></thead>
       <tbody>${rows}</tbody>
-    </table>`;
+    </table>`}`;
 
   syncFilterUI();
   applyFilters();
@@ -464,6 +473,28 @@ function typeLabel(group) {
   return { accessibility: 'A11Y', 'html-validation': 'HTML', css: 'CSS' }[group] || group.toUpperCase();
 }
 
+// Known WCAG level/category tags a finding's wcag_tags might carry — deliberately
+// excludes granular criterion-specific tags (e.g. "wcag143") which aren't useful
+// as a compact per-issue label.
+const WCAG_TAG_LABELS = {
+  wcag2a:          'WCAG 2.0 A',
+  wcag2aa:         'WCAG 2.0 AA',
+  wcag21aa:        'WCAG 2.1 AA',
+  wcag22aa:        'WCAG 2.2 AA',
+  wcag2aaa:        'WCAG 2.0 AAA',
+  'best-practice': 'Best Practice',
+  experimental:    'Experimental',
+};
+
+function findingTagPills(f) {
+  if (!f.wcag_tags || !f.wcag_tags.length) return '';
+  const known = f.wcag_tags.filter((t) => WCAG_TAG_LABELS[t]);
+  if (!known.length) return '';
+  return `<div class="finding-tags">${known.map((t) =>
+    `<span class="finding-tag-pill">${escapeHtml(WCAG_TAG_LABELS[t])}</span>`
+  ).join('')}</div>`;
+}
+
 function setTypeFilter(type) {
   activeTypes = type;
   document.querySelectorAll('.type-filter-btn').forEach((btn) => {
@@ -471,6 +502,23 @@ function setTypeFilter(type) {
     btn.classList.toggle('active', btnType === type);
   });
   applyFilters();
+  updateSummaryCounts();
+}
+
+// Recomputes the Critical/Serious/Moderate/Minor summary numbers from the
+// rows currently in the DOM, scoped to the active type filter — the severity
+// toggle (activeFilters) is a display lens on top of these numbers, not a
+// second filter that should shrink them, so it's deliberately not consulted here.
+function updateSummaryCounts() {
+  const counts = { critical: 0, serious: 0, moderate: 0, minor: 0 };
+  document.querySelectorAll('tbody tr[data-impact]').forEach((row) => {
+    const typeMatch = activeTypes === 'all' || row.dataset.type === activeTypes;
+    if (typeMatch && counts[row.dataset.impact] !== undefined) counts[row.dataset.impact]++;
+  });
+  ['critical', 'serious', 'moderate', 'minor'].forEach((i) => {
+    const el = document.querySelector(`.summary-card[data-filter="${i}"] .num`);
+    if (el) el.textContent = counts[i] || 0;
+  });
 }
 
 
@@ -518,18 +566,14 @@ function truncateSeg(seg, max = 22) {
 }
 
 function renderLocation(f) {
+  // Location (screenshot/breadcrumb/on-page position) is an accessibility-only
+  // concept — HTML/CSS findings don't have anything meaningful to show here.
+  // typeGroup() matches the same "missing type = accessibility" fallback used
+  // elsewhere in this file (row data-type, type badge).
+  if (typeGroup(f.type) !== 'accessibility') return '';
+
   const loc = f.location;
   let html = '';
-
-  // HTML/CSS findings: show line/column instead of DOM location
-  if (loc && loc.line !== null && loc.line !== undefined) {
-    const lineCol = loc.column ? `Line ${loc.line}, Col ${loc.column}` : `Line ${loc.line}`;
-    html += `<div class="loc-breadcrumb"><span class="seg target">${lineCol}</span></div>`;
-    if (f.target_selector) {
-      html += `<div class="loc-position" style="font-family:ui-monospace,monospace;font-size:10px">${escapeHtml(truncateSeg(f.target_selector, 30))}</div>`;
-    }
-    return html;
-  }
 
   // Accessibility findings: screenshot, breadcrumb, DOM position
   if (loc && loc.screenshot) {

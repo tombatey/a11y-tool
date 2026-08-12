@@ -108,6 +108,25 @@
   .badge.moderate { background: var(--moderate); }
   .badge.minor    { background: var(--minor); }
 
+  .type-badge { display: inline-block; font-size: 10px; font-weight: 600; padding: 1px 6px; border-radius: 4px; margin-right: 4px; vertical-align: middle; }
+  .type-badge.accessibility { background: #F3FAE6; color: #547717; }
+  .type-badge.html-validation { background: #E1F7FE; color: #017CA1; }
+  .type-badge.css-validation, .type-badge.css-lint { background: #F8FAFC; color: #334155; border: 1px solid #E2E8F0; }
+
+  .type-filters { display: flex; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; }
+  .type-filter-btn {
+    padding: 4px 12px; border: 1px solid var(--line); border-radius: 99px;
+    background: #fff; cursor: pointer; font-size: 12px; color: var(--muted);
+    font-family: inherit;
+  }
+  .type-filter-btn.active { border-color: var(--ink); color: var(--ink); font-weight: 500; background: var(--paper); }
+
+  .finding-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
+  .finding-tag-pill {
+    font-size: 10px; font-weight: 500; padding: 1px 7px; border-radius: 99px;
+    background: var(--paper); border: 1px solid var(--line); color: var(--muted);
+  }
+
   .url-cell { max-width: 200px; word-break: break-all; color: #017CA1; }
   .location-cell { width: 220px; max-width: 220px; overflow: hidden; }
   .loc-breadcrumb { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; margin-bottom: 5px; }
@@ -212,6 +231,7 @@
 
 <script>
 let activeFilters = new Set(['critical', 'serious', 'moderate', 'minor']);
+let activeTypes   = 'all'; // 'all' | 'accessibility' | 'html-validation' | 'css'
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 fetch('/api/me')
@@ -281,6 +301,7 @@ async function loadList() {
 // ── Detail view ───────────────────────────────────────────────────────────────
 async function viewScan(id) {
   activeFilters = new Set(['critical', 'serious', 'moderate', 'minor']);
+  activeTypes   = 'all';
   document.getElementById('listView').style.display = 'none';
   document.getElementById('detailView').style.display = 'block';
   document.getElementById('scanMeta').innerHTML = '';
@@ -300,14 +321,24 @@ function backToList() {
 
 function renderMeta(job) {
   const input = job.input || {};
-  const tags  = input.options?.tags || [];
+  const opts  = input.options || {};
+  const tags  = opts.tags || [];
   const { dateStr, timeStr } = formatDate(job.createdAt);
 
   const target = input.mode === 'crawl'
     ? `<a href="${escHtml(input.rootUrl)}" target="_blank" rel="noopener">${escHtml(input.rootUrl)}</a>`
     : `${input.urls?.length || 0} URL${(input.urls?.length || 0) === 1 ? '' : 's'}`;
 
-  const tagPills = tags.map(t => `<span class="tag-pill">${escHtml(t)}</span>`).join('');
+  // Pills summarise the whole scan configuration — known WCAG/axe rule tags
+  // (labeled, not raw), plus the validation/screenshot options, which are
+  // separate boolean fields (not part of `tags`).
+  const pillLabels = [
+    ...tags.filter(t => WCAG_TAG_LABELS[t]).map(t => WCAG_TAG_LABELS[t]),
+    ...(opts.validateHtml ? ['HTML Validation'] : []),
+    ...(opts.validateCss ? ['CSS Validation'] : []),
+    ...(opts.captureScreenshots ? ['Screenshots'] : []),
+  ];
+  const tagPills = pillLabels.map(label => `<span class="tag-pill">${escHtml(label)}</span>`).join('');
 
   // Re-scan buttons — always offer same-config rescan; offer URL-list rescan for crawl scans
   const rescanButtons = `
@@ -339,25 +370,49 @@ function renderMeta(job) {
         <div class="label">Status</div>
         <div class="value"><span class="status-badge ${job.status}">${job.status}</span></div>
       </div>
-      ${tags.length ? `<div class="scan-meta-item"><div class="label">Tags</div><div class="tag-pills">${tagPills}</div></div>` : ''}
+      ${pillLabels.length ? `<div class="scan-meta-item"><div class="label">Tags</div><div class="tag-pills">${tagPills}</div></div>` : ''}
       ${rescanButtons}
     </div>`;
 }
 
 function renderResults(job) {
   const el = document.getElementById('detailResults');
-  if (!job.findings?.length) {
-    el.innerHTML = '<div class="empty">No accessibility violations found in this scan.</div>';
+  const findings = job.findings || [];
+  const findingsEmpty = findings.length === 0;
+  const emptyFindingsMessage = '<div class="empty">No accessibility violations found in this scan.</div>';
+
+  // Truly nothing to show (no pages visited, no findings) — keep the original
+  // single-message empty state. Once at least one page has been scanned,
+  // always render the summary/pages-toggle scaffold, since "Show pages
+  // scanned" is independent of whether any findings were recorded.
+  if (findingsEmpty && job.pagesScanned === 0) {
+    el.innerHTML = emptyFindingsMessage;
     return;
   }
 
   const counts = { critical: 0, serious: 0, moderate: 0, minor: 0 };
-  job.findings.forEach(f => { if (counts[f.impact] !== undefined) counts[f.impact]++; });
+  findings.forEach(f => { if (counts[f.impact] !== undefined) counts[f.impact]++; });
+
+  // Type counts for filter buttons
+  const typeCounts = {};
+  findings.forEach(f => {
+    const t = typeGroup(f.type);
+    typeCounts[t] = (typeCounts[t] || 0) + 1;
+  });
+  const hasMultipleTypes = Object.keys(typeCounts).length > 1;
+
+  const typeFilterHtml = hasMultipleTypes ? `
+    <div class="type-filters">
+      <button class="type-filter-btn ${activeTypes === 'all' ? 'active' : ''}" onclick="setTypeFilter('all')">All (${findings.length})</button>
+      ${Object.entries(typeCounts).map(([t, n]) =>
+        `<button class="type-filter-btn ${activeTypes === t ? 'active' : ''}" onclick="setTypeFilter('${t}')">${typeLabel(t)} (${n})</button>`
+      ).join('')}
+    </div>` : '';
 
   const summaryHtml = `
     <div class="summary-grid">
       <div class="summary-card"><div class="num">${job.pagesScanned}</div><div class="label">Pages scanned</div></div>
-      <div class="summary-card"><div class="num">${job.findings.length}</div><div class="label">Total findings</div></div>
+      <div class="summary-card"><div class="num">${findings.length}</div><div class="label">Total findings</div></div>
       ${['critical','serious','moderate','minor'].map(i => `
         <div class="summary-card filter-card" data-filter="${i}" onclick="toggleFilter('${i}')">
           <div class="num">${counts[i]}</div>
@@ -366,15 +421,15 @@ function renderResults(job) {
         </div>`).join('')}
     </div>`;
 
-  const rows = job.findings.slice()
+  const rows = findings.slice()
     .sort((a, b) => impactRank(b.impact) - impactRank(a.impact))
     .map(f => `
-      <tr data-impact="${f.impact || ''}" data-url="${escHtml(f.url)}">
+      <tr data-impact="${f.impact || ''}" data-type="${typeGroup(f.type)}" data-url="${escHtml(f.url)}">
         <td><span class="badge ${f.impact}">${f.impact || 'n/a'}</span></td>
-        <td>${escHtml(f.rule_id)}</td>
+        <td><span class="type-badge ${f.type}">${typeLabel(typeGroup(f.type))}</span>${escHtml(f.rule_id)}</td>
         <td class="url-cell">${escHtml(f.url)}</td>
         <td class="location-cell">${renderLocation(f)}</td>
-        <td>${escHtml(f.help)} — <a href="${escHtml(f.help_url)}" target="_blank" rel="noopener">details</a></td>
+        <td>${escHtml(f.help)}${f.help_url ? ` — <a href="${escHtml(f.help_url)}" target="_blank" rel="noopener">details</a>` : ''}${findingTagPills(f)}</td>
       </tr>`).join('');
 
   const scanId = new URLSearchParams(window.location.search).get('id');
@@ -390,17 +445,20 @@ function renderResults(job) {
       </a>
     </div>` : '';
 
-  el.innerHTML = `${summaryHtml}
+  el.innerHTML = `
+    ${typeFilterHtml}
+    ${summaryHtml}
     ${exportBar}
     <div class="pages-toggle">
       <span></span>
       <button class="pages-toggle-btn" id="pagesToggleBtn" onclick="togglePagesPanelH('${scanId || ''}')">Show pages scanned</button>
     </div>
     <div id="pagesPanelH" style="display:none"></div>
+    ${findingsEmpty ? emptyFindingsMessage : `
     <table>
       <thead><tr><th>Impact</th><th>Rule</th><th>URL</th><th>Location</th><th>Issue</th></tr></thead>
       <tbody>${rows}</tbody>
-    </table>`;
+    </table>`}`;
 
   syncFilterUI();
   applyFilters();
@@ -495,13 +553,73 @@ function syncFilterUI() {
 function applyFilters() {
   document.querySelectorAll('tbody tr[data-impact]').forEach(row => {
     const impactMatch = activeFilters.has(row.dataset.impact);
+    const typeMatch   = activeTypes === 'all' || row.dataset.type === activeTypes;
     const urlMatch    = !hUrlFilter || row.dataset.url === hUrlFilter;
-    row.style.display = (impactMatch && urlMatch) ? '' : 'none';
+    row.style.display = (impactMatch && typeMatch && urlMatch) ? '' : 'none';
   });
+}
+
+// ── Type filter (All/Accessibility/HTML/CSS) ────────────────────────────────────
+function typeGroup(type) {
+  if (!type || type === 'accessibility') return 'accessibility';
+  if (type === 'html-validation') return 'html-validation';
+  return 'css';
+}
+
+function typeLabel(group) {
+  return { accessibility: 'A11Y', 'html-validation': 'HTML', css: 'CSS' }[group] || group.toUpperCase();
+}
+
+function setTypeFilter(type) {
+  activeTypes = type;
+  document.querySelectorAll('.type-filter-btn').forEach(btn => {
+    const btnType = btn.getAttribute('onclick').match(/setTypeFilter\('(.+?)'\)/)?.[1];
+    btn.classList.toggle('active', btnType === type);
+  });
+  applyFilters();
+  updateSummaryCounts();
+}
+
+// Recomputes the Critical/Serious/Moderate/Minor summary numbers from the rows
+// currently in the DOM, scoped to the active type filter — mirrors app.js.
+function updateSummaryCounts() {
+  const counts = { critical: 0, serious: 0, moderate: 0, minor: 0 };
+  document.querySelectorAll('tbody tr[data-impact]').forEach(row => {
+    const typeMatch = activeTypes === 'all' || row.dataset.type === activeTypes;
+    if (typeMatch && counts[row.dataset.impact] !== undefined) counts[row.dataset.impact]++;
+  });
+  ['critical', 'serious', 'moderate', 'minor'].forEach(i => {
+    const el = document.querySelector(`.summary-card[data-filter="${i}"] .num`);
+    if (el) el.textContent = counts[i] || 0;
+  });
+}
+
+// ── Per-finding WCAG/category tags ───────────────────────────────────────────────
+const WCAG_TAG_LABELS = {
+  wcag2a:          'WCAG 2.0 A',
+  wcag2aa:         'WCAG 2.0 AA',
+  wcag21aa:        'WCAG 2.1 AA',
+  wcag22aa:        'WCAG 2.2 AA',
+  wcag2aaa:        'WCAG 2.0 AAA',
+  'best-practice': 'Best Practice',
+  experimental:    'Experimental',
+};
+
+function findingTagPills(f) {
+  if (!f.wcag_tags || !f.wcag_tags.length) return '';
+  const known = f.wcag_tags.filter(t => WCAG_TAG_LABELS[t]);
+  if (!known.length) return '';
+  return `<div class="finding-tags">${known.map(t =>
+    `<span class="finding-tag-pill">${escHtml(WCAG_TAG_LABELS[t])}</span>`
+  ).join('')}</div>`;
 }
 
 // ── Location rendering ────────────────────────────────────────────────────────
 function renderLocation(f) {
+  // Location (screenshot/breadcrumb/on-page position) is an accessibility-only
+  // concept — HTML/CSS findings don't have anything meaningful to show here.
+  if (typeGroup(f.type) !== 'accessibility') return '';
+
   const loc = f.location;
   let html = '';
   if (loc?.screenshot) {
