@@ -43,8 +43,11 @@ async function preFillFromScan(scanId, forceMode) {
     document.getElementById('rootUrl').value  = input.rootUrl || '';
     document.getElementById('maxPages').value = opts.maxPages || 50;
     document.getElementById('maxDepth').value = opts.maxDepth || 3;
+  } else if (targetMode === 'sitemap') {
+    document.getElementById('sitemapUrl').value = input.sitemapUrl || '';
+    document.getElementById('sitemapMaxPages').value = opts.maxPages || 50;
   } else {
-    // list mode — either original URLs or discovered pages from a crawl
+    // list mode — either original URLs or discovered pages from a crawl/sitemap scan
     const urls = forceMode === 'list' && pages.length
       ? pages.map(p => p.url)
       : (input.urls || []);
@@ -74,7 +77,7 @@ async function preFillFromScan(scanId, forceMode) {
 
   // Show banner
   const dateStr = new Date(job.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
-  const modeNote = forceMode === 'list' && input.mode === 'crawl'
+  const modeNote = forceMode === 'list' && input.mode !== 'list'
     ? ` — using ${pages.length} discovered URLs as a URL list`
     : '';
   document.getElementById('rescanBannerText').textContent =
@@ -87,8 +90,10 @@ async function preFillFromScan(scanId, forceMode) {
 
 const modeCrawlBtn = document.getElementById('modeCrawlBtn');
 const modeListBtn = document.getElementById('modeListBtn');
+const modeSitemapBtn = document.getElementById('modeSitemapBtn');
 const crawlFields = document.getElementById('crawlFields');
 const listFields = document.getElementById('listFields');
+const sitemapFields = document.getElementById('sitemapFields');
 const startBtn = document.getElementById('startBtn');
 const statusLine = document.getElementById('statusLine');
 const statusText = document.getElementById('statusText');
@@ -136,13 +141,16 @@ function buildAuthPayload() {
 
 modeCrawlBtn.addEventListener('click', () => setMode('crawl'));
 modeListBtn.addEventListener('click', () => setMode('list'));
+modeSitemapBtn.addEventListener('click', () => setMode('sitemap'));
 
 function setMode(m) {
   mode = m;
   modeCrawlBtn.classList.toggle('active', m === 'crawl');
   modeListBtn.classList.toggle('active', m === 'list');
+  modeSitemapBtn.classList.toggle('active', m === 'sitemap');
   crawlFields.style.display = m === 'crawl' ? 'block' : 'none';
   listFields.style.display = m === 'list' ? 'block' : 'none';
+  sitemapFields.style.display = m === 'sitemap' ? 'block' : 'none';
 }
 
 // Tag chip toggle — keep .checked class in sync with the checkbox state
@@ -196,6 +204,12 @@ modeListBtn.addEventListener('click', () => {
     document.getElementById('screenshotChip').classList.add('checked');
   }
 });
+modeSitemapBtn.addEventListener('click', () => {
+  if (!screenshotCheckbox.checked) {
+    screenshotCheckbox.checked = true;
+    document.getElementById('screenshotChip').classList.add('checked');
+  }
+});
 
 startBtn.addEventListener('click', startScan);
 
@@ -220,6 +234,11 @@ async function startScan() {
     const maxPages = parseInt(document.getElementById('maxPages').value, 10) || 50;
     const maxDepth = parseInt(document.getElementById('maxDepth').value, 10) || 3;
     body = { mode: 'crawl', rootUrl, options: { maxPages, maxDepth, tags, captureScreenshots, validateHtml, validateCss }, auth };
+  } else if (mode === 'sitemap') {
+    const sitemapUrl = document.getElementById('sitemapUrl').value.trim();
+    if (!sitemapUrl) return alert('Enter a sitemap URL.');
+    const maxPages = parseInt(document.getElementById('sitemapMaxPages').value, 10) || 50;
+    body = { mode: 'sitemap', sitemapUrl, options: { maxPages, tags, captureScreenshots, validateHtml, validateCss }, auth };
   } else {
     const raw = document.getElementById('urlList').value.trim();
     if (!raw) return alert('Enter at least one URL.');

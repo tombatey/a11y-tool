@@ -57,8 +57,9 @@
   .scan-target { max-width: 260px; }
   .scan-target .url { font-size: 12px; color: var(--accent); word-break: break-all; }
   .scan-target .mode-chip { display: inline-block; font-size: 10px; font-weight: 600; padding: 1px 6px; border-radius: 4px; margin-bottom: 3px; }
-  .mode-chip.crawl { background: #E1F7FE; color: #017CA1; }
-  .mode-chip.list  { background: #F8FAFC; color: #334155; border: 1px solid #E2E8F0; }
+  .mode-chip.crawl   { background: #E1F7FE; color: #017CA1; }
+  .mode-chip.list    { background: #F8FAFC; color: #334155; border: 1px solid #E2E8F0; }
+  .mode-chip.sitemap { background: var(--green-100); color: var(--green-800); }
 
   .sev-counts { display: flex; gap: 8px; flex-wrap: wrap; }
   .sev-count { font-size: 11px; font-weight: 600; }
@@ -259,10 +260,12 @@ async function loadList() {
 
   const rows = scans.map(s => {
     const input = s.input || {};
-    const modeLabel = input.mode === 'crawl' ? 'Crawl' : 'URL List';
-    const modeClass = input.mode === 'crawl' ? 'crawl' : 'list';
+    const modeLabel = { crawl: 'Crawl', sitemap: 'Sitemap' }[input.mode] || 'URL List';
+    const modeClass = { crawl: 'crawl', sitemap: 'sitemap' }[input.mode] || 'list';
     const target = input.mode === 'crawl'
       ? `<div class="url">${escHtml(input.rootUrl || '—')}</div>`
+      : input.mode === 'sitemap'
+      ? `<div class="url">${escHtml(input.sitemapUrl || '—')}</div>`
       : `<div class="url">${input.urls?.length || 0} URL${(input.urls?.length || 0) === 1 ? '' : 's'}</div>`;
 
     const sc = s.severityCounts || {};
@@ -327,6 +330,8 @@ function renderMeta(job) {
 
   const target = input.mode === 'crawl'
     ? `<a href="${escHtml(input.rootUrl)}" target="_blank" rel="noopener">${escHtml(input.rootUrl)}</a>`
+    : input.mode === 'sitemap'
+    ? `<a href="${escHtml(input.sitemapUrl)}" target="_blank" rel="noopener">${escHtml(input.sitemapUrl)}</a>`
     : `${input.urls?.length || 0} URL${(input.urls?.length || 0) === 1 ? '' : 's'}`;
 
   // Pills summarise the whole scan configuration — known WCAG/axe rule tags
@@ -340,14 +345,15 @@ function renderMeta(job) {
   ];
   const tagPills = pillLabels.map(label => `<span class="tag-pill">${escHtml(label)}</span>`).join('');
 
-  // Re-scan buttons — always offer same-config rescan; offer URL-list rescan for crawl scans
+  // Re-scan buttons — always offer same-config rescan; offer URL-list rescan
+  // for crawl/sitemap scans (both have a discovered `pages` list to reuse)
   const rescanButtons = `
     <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
       <a href="/?rescan=${escHtml(job.id)}" class="rescan-btn" title="Run a new scan with the same settings">
         ↻ Re-scan
       </a>
-      ${input.mode === 'crawl' ? `
-      <a href="/?rescan=${escHtml(job.id)}&mode=list" class="rescan-btn rescan-btn-secondary" title="Re-scan using the pages discovered in this crawl as a URL list">
+      ${(input.mode === 'crawl' || input.mode === 'sitemap') ? `
+      <a href="/?rescan=${escHtml(job.id)}&mode=list" class="rescan-btn rescan-btn-secondary" title="Re-scan using the pages discovered in this scan as a URL list">
         ↻ Re-scan URLs
       </a>` : ''}
     </div>`;
@@ -360,7 +366,7 @@ function renderMeta(job) {
       </div>
       <div class="scan-meta-item">
         <div class="label">Mode</div>
-        <div class="value">${input.mode === 'crawl' ? 'Crawl' : 'URL List'}</div>
+        <div class="value">${{ crawl: 'Crawl', sitemap: 'Sitemap' }[input.mode] || 'URL List'}</div>
       </div>
       <div class="scan-meta-item" style="flex:1; min-width:200px">
         <div class="label">Target</div>

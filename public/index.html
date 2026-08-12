@@ -308,6 +308,7 @@
     <div class="mode-toggle">
       <button id="modeCrawlBtn" class="active">Crawl a site</button>
       <button id="modeListBtn">Scan a URL list</button>
+      <button id="modeSitemapBtn">Scan a sitemap</button>
     </div>
 
     <div id="crawlFields">
@@ -328,6 +329,18 @@
     <div id="listFields" style="display:none;">
       <label for="urlList">URLs (one per line)</label>
       <textarea id="urlList" placeholder="https://example.com/page-1&#10;https://example.com/page-2"></textarea>
+    </div>
+
+    <div id="sitemapFields" style="display:none;">
+      <label for="sitemapUrl">Sitemap URL</label>
+      <input type="text" id="sitemapUrl" placeholder="https://example.com/sitemap.xml" />
+      <div class="row">
+        <div>
+          <label for="sitemapMaxPages">Max pages</label>
+          <input type="text" id="sitemapMaxPages" value="50" />
+        </div>
+      </div>
+      <div class="field-hint">Supports sitemap index files (a sitemap that links to other sitemaps) — child sitemaps are fetched automatically.</div>
     </div>
 
     <hr class="divider" />

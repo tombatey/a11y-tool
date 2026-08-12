@@ -3,6 +3,7 @@ const fs   = require('fs/promises');
 const { chromium } = require('playwright');
 const { v4: uuidv4 } = require('uuid');
 const { crawlSite, normalizeUrl } = require('./crawler');
+const { fetchSitemapUrls } = require('./sitemap');
 const { scanPageWithAxe } = require('./scanner');
 const { validateHtml }    = require('./validators/html');
 const { validateCss }     = require('./validators/css');
@@ -92,6 +93,28 @@ async function appendResult(scanId, result) {
   await addPageResult(scanId, { ...result, findings: processed });
 }
 
+// Scans a fixed list of URLs, one page at a time — shared by both `list`
+// mode (URLs pasted directly) and `sitemap` mode (URLs resolved from an
+// XML sitemap), which differ only in where `urls` comes from.
+async function scanUrlList(context, scanId, urls, opts, seenStylesheets, shouldStop) {
+  for (const rawUrl of urls) {
+    if (shouldStop()) break;
+    const url  = normalizeUrl(rawUrl) || rawUrl;
+    const page = await context.newPage();
+    try {
+      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+      if (!shouldStop()) {
+        const result = await runAllValidators(page, url, opts, seenStylesheets);
+        await appendResult(scanId, result);
+      }
+    } catch (err) {
+      if (!shouldStop()) await addError(scanId, { url, error: err.message });
+    } finally {
+      await page.close().catch(() => {});
+    }
+  }
+}
+
 // ─── Job runner ───────────────────────────────────────────────────────────────
 
 async function runJob(job) {
@@ -136,23 +159,15 @@ async function runJob(job) {
 
     } else if (input.mode === 'list') {
       await setStatus(id, 'scanning');
+      await scanUrlList(context, id, input.urls, opts, seenStylesheets, shouldStop);
 
-      for (const rawUrl of input.urls) {
-        if (shouldStop()) break;
-        const url  = normalizeUrl(rawUrl) || rawUrl;
-        const page = await context.newPage();
-        try {
-          await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
-          if (!shouldStop()) {
-            const result = await runAllValidators(page, url, opts, seenStylesheets);
-            await appendResult(id, result);
-          }
-        } catch (err) {
-          if (!shouldStop()) await addError(id, { url, error: err.message });
-        } finally {
-          await page.close().catch(() => {});
-        }
-      }
+    } else if (input.mode === 'sitemap') {
+      await setStatus(id, 'scanning');
+      const maxPages = opts.maxPages || 50;
+      const urls = await fetchSitemapUrls(context, input.sitemapUrl, maxPages);
+      if (!urls.length) throw new Error(`No URLs found in sitemap: ${input.sitemapUrl}`);
+      await scanUrlList(context, id, urls, opts, seenStylesheets, shouldStop);
+
     } else {
       throw new Error(`Unknown job mode: ${input.mode}`);
     }
