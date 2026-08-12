@@ -69,11 +69,10 @@ function summaryCounts(findings) {
 }
 
 function locationText(f) {
-  if (f.location?.line) {
-    return f.location.column
-      ? `Line ${f.location.line}, Col ${f.location.column}`
-      : `Line ${f.location.line}`;
-  }
+  // Location is an accessibility-only concept — matches the live results UI
+  // (public/app.js, public/history.html), which hides it entirely for HTML/CSS.
+  if (f.type && f.type !== 'accessibility') return '';
+
   if (f.breadcrumb?.length) {
     return f.breadcrumb.slice(-3).join(' › ');
   }

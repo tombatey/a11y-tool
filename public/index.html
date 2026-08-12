@@ -206,6 +206,12 @@
   }
   .type-filter-btn.active { border-color: var(--ink); color: var(--ink); font-weight: 500; background: var(--paper); }
 
+  .finding-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
+  .finding-tag-pill {
+    font-size: 10px; font-weight: 500; padding: 1px 7px; border-radius: 99px;
+    background: var(--paper); border: 1px solid var(--line); color: var(--muted);
+  }
+
   .tag-grid { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 0; }
   .tag-chip {
     display: flex; align-items: center; gap: 6px;
@@ -388,33 +394,35 @@
 
     <hr class="divider" />
 
-    <div class="tag-section-label">WCAG compliance level</div>
-    <div class="tag-grid" id="tagGrid">
-      <label class="tag-chip checked">
-        <input type="checkbox" value="wcag2a" checked /> wcag2a <span class="tag-desc">2.0 Level A</span>
-      </label>
-      <label class="tag-chip checked">
-        <input type="checkbox" value="wcag2aa" checked /> wcag2aa <span class="tag-desc">2.0 Level AA</span>
-      </label>
-      <label class="tag-chip checked">
-        <input type="checkbox" value="wcag21aa" checked /> wcag21aa <span class="tag-desc">2.1 Level AA</span>
-      </label>
-      <label class="tag-chip">
-        <input type="checkbox" value="wcag22aa" /> wcag22aa <span class="tag-desc">2.2 Level AA</span>
-      </label>
-      <label class="tag-chip">
-        <input type="checkbox" value="wcag2aaa" /> wcag2aaa <span class="tag-desc">2.0 Level AAA</span>
-      </label>
-    </div>
+    <div id="ruleTagsSection">
+      <div class="tag-section-label">WCAG compliance level</div>
+      <div class="tag-grid" id="tagGrid">
+        <label class="tag-chip checked">
+          <input type="checkbox" value="wcag2a" checked /> wcag2a <span class="tag-desc">2.0 Level A</span>
+        </label>
+        <label class="tag-chip checked">
+          <input type="checkbox" value="wcag2aa" checked /> wcag2aa <span class="tag-desc">2.0 Level AA</span>
+        </label>
+        <label class="tag-chip checked">
+          <input type="checkbox" value="wcag21aa" checked /> wcag21aa <span class="tag-desc">2.1 Level AA</span>
+        </label>
+        <label class="tag-chip">
+          <input type="checkbox" value="wcag22aa" /> wcag22aa <span class="tag-desc">2.2 Level AA</span>
+        </label>
+        <label class="tag-chip">
+          <input type="checkbox" value="wcag2aaa" /> wcag2aaa <span class="tag-desc">2.0 Level AAA</span>
+        </label>
+      </div>
 
-    <div class="tag-section-label">Additional checks</div>
-    <div class="tag-grid">
-      <label class="tag-chip">
-        <input type="checkbox" value="best-practice" /> best-practice <span class="tag-desc">Axe best practices</span>
-      </label>
-      <label class="tag-chip">
-        <input type="checkbox" value="experimental" /> experimental <span class="tag-desc">Axe experimental rules</span>
-      </label>
+      <div class="tag-section-label">Additional checks</div>
+      <div class="tag-grid">
+        <label class="tag-chip">
+          <input type="checkbox" value="best-practice" /> best-practice <span class="tag-desc">Axe best practices</span>
+        </label>
+        <label class="tag-chip">
+          <input type="checkbox" value="experimental" /> experimental <span class="tag-desc">Axe experimental rules</span>
+        </label>
+      </div>
     </div>
 
     <div class="tag-section-label">Validation</div>

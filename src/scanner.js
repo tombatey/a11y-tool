@@ -99,7 +99,10 @@ async function scanPageWithAxe(page, url, {
         type: 'accessibility',
         source_tool: 'axe-core',
         rule_id: violation.id,
-        wcag_tags: violation.tags.filter((t) => /^wcag/.test(t)),
+        // Keep WCAG criterion tags plus the two category tags axe-core uses
+        // for non-WCAG rules — best-practice/experimental — so the UI can
+        // show a "Best Practice"/"Experimental" pill alongside WCAG level pills.
+        wcag_tags: violation.tags.filter((t) => /^wcag|^best-practice$|^experimental$/.test(t)),
         impact: violation.impact,       // minor | moderate | serious | critical
         description: violation.description,
         help: violation.help,
