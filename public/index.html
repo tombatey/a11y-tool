@@ -206,6 +206,12 @@
   }
   .type-filter-btn.active { border-color: var(--ink); color: var(--ink); font-weight: 500; background: var(--paper); }
 
+  .finding-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
+  .finding-tag-pill {
+    font-size: 10px; font-weight: 500; padding: 1px 7px; border-radius: 99px;
+    background: var(--paper); border: 1px solid var(--line); color: var(--muted);
+  }
+
   .tag-grid { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 0; }
   .tag-chip {
     display: flex; align-items: center; gap: 6px;
@@ -242,6 +248,11 @@
 
   /* Location column — fixed width, content clips inside */
   .location-cell { width: 220px; max-width: 220px; overflow: hidden; }
+  .loc-na { color: var(--muted); font-size: 12px; }
+  /* Hidden when the type filter is isolated to HTML or CSS — Location is
+     accessibility-only, so the column would just be "n/a" the whole way down. */
+  .hide-location-col .location-header,
+  .hide-location-col .location-cell { display: none; }
   .loc-breadcrumb { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; margin-bottom: 5px; overflow: hidden; }
   .loc-breadcrumb .seg {
     font-family: ui-monospace, SFMono-Regular, monospace; font-size: 10px;
@@ -302,6 +313,7 @@
     <div class="mode-toggle">
       <button id="modeCrawlBtn" class="active">Crawl a site</button>
       <button id="modeListBtn">Scan a URL list</button>
+      <button id="modeSitemapBtn">Scan a sitemap</button>
     </div>
 
     <div id="crawlFields">
@@ -322,6 +334,18 @@
     <div id="listFields" style="display:none;">
       <label for="urlList">URLs (one per line)</label>
       <textarea id="urlList" placeholder="https://example.com/page-1&#10;https://example.com/page-2"></textarea>
+    </div>
+
+    <div id="sitemapFields" style="display:none;">
+      <label for="sitemapUrl">Sitemap URL</label>
+      <input type="text" id="sitemapUrl" placeholder="https://example.com/sitemap.xml" />
+      <div class="row">
+        <div>
+          <label for="sitemapMaxPages">Max pages</label>
+          <input type="text" id="sitemapMaxPages" value="50" />
+        </div>
+      </div>
+      <div class="field-hint">Supports sitemap index files (a sitemap that links to other sitemaps) — child sitemaps are fetched automatically.</div>
     </div>
 
     <hr class="divider" />
@@ -388,33 +412,35 @@
 
     <hr class="divider" />
 
-    <div class="tag-section-label">WCAG compliance level</div>
-    <div class="tag-grid" id="tagGrid">
-      <label class="tag-chip checked">
-        <input type="checkbox" value="wcag2a" checked /> wcag2a <span class="tag-desc">2.0 Level A</span>
-      </label>
-      <label class="tag-chip checked">
-        <input type="checkbox" value="wcag2aa" checked /> wcag2aa <span class="tag-desc">2.0 Level AA</span>
-      </label>
-      <label class="tag-chip checked">
-        <input type="checkbox" value="wcag21aa" checked /> wcag21aa <span class="tag-desc">2.1 Level AA</span>
-      </label>
-      <label class="tag-chip">
-        <input type="checkbox" value="wcag22aa" /> wcag22aa <span class="tag-desc">2.2 Level AA</span>
-      </label>
-      <label class="tag-chip">
-        <input type="checkbox" value="wcag2aaa" /> wcag2aaa <span class="tag-desc">2.0 Level AAA</span>
-      </label>
-    </div>
+    <div id="ruleTagsSection">
+      <div class="tag-section-label">WCAG compliance level</div>
+      <div class="tag-grid" id="tagGrid">
+        <label class="tag-chip checked">
+          <input type="checkbox" value="wcag2a" checked /> wcag2a <span class="tag-desc">2.0 Level A</span>
+        </label>
+        <label class="tag-chip checked">
+          <input type="checkbox" value="wcag2aa" checked /> wcag2aa <span class="tag-desc">2.0 Level AA</span>
+        </label>
+        <label class="tag-chip checked">
+          <input type="checkbox" value="wcag21aa" checked /> wcag21aa <span class="tag-desc">2.1 Level AA</span>
+        </label>
+        <label class="tag-chip">
+          <input type="checkbox" value="wcag22aa" /> wcag22aa <span class="tag-desc">2.2 Level AA</span>
+        </label>
+        <label class="tag-chip">
+          <input type="checkbox" value="wcag2aaa" /> wcag2aaa <span class="tag-desc">2.0 Level AAA</span>
+        </label>
+      </div>
 
-    <div class="tag-section-label">Additional checks</div>
-    <div class="tag-grid">
-      <label class="tag-chip">
-        <input type="checkbox" value="best-practice" /> best-practice <span class="tag-desc">Axe best practices</span>
-      </label>
-      <label class="tag-chip">
-        <input type="checkbox" value="experimental" /> experimental <span class="tag-desc">Axe experimental rules</span>
-      </label>
+      <div class="tag-section-label">Additional checks</div>
+      <div class="tag-grid">
+        <label class="tag-chip">
+          <input type="checkbox" value="best-practice" /> best-practice <span class="tag-desc">Axe best practices</span>
+        </label>
+        <label class="tag-chip">
+          <input type="checkbox" value="experimental" /> experimental <span class="tag-desc">Axe experimental rules</span>
+        </label>
+      </div>
     </div>
 
     <div class="tag-section-label">Validation</div>

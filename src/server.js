@@ -163,18 +163,22 @@ function validateAuth(auth) {
 }
 
 app.post('/api/scan', async (req, res) => {
-  const { mode, rootUrl, urls, options, auth } = req.body || {};
+  const { mode, rootUrl, urls, sitemapUrl, options, auth } = req.body || {};
   if (mode === 'crawl' && !rootUrl)
     return res.status(400).json({ error: 'rootUrl is required for crawl mode' });
   if (mode === 'list' && (!Array.isArray(urls) || urls.length === 0))
     return res.status(400).json({ error: 'urls array is required for list mode' });
-  if (!['crawl', 'list'].includes(mode))
-    return res.status(400).json({ error: "mode must be 'crawl' or 'list'" });
+  if (mode === 'sitemap') {
+    if (!sitemapUrl) return res.status(400).json({ error: 'sitemapUrl is required for sitemap mode' });
+    try { new URL(sitemapUrl); } catch { return res.status(400).json({ error: 'sitemapUrl must be a valid absolute URL' }); }
+  }
+  if (!['crawl', 'list', 'sitemap'].includes(mode))
+    return res.status(400).json({ error: "mode must be 'crawl', 'list', or 'sitemap'" });
 
   const authError = validateAuth(auth);
   if (authError) return res.status(400).json({ error: authError });
 
-  const job = await createJob({ mode, rootUrl, urls, options, auth }, req.user?.email || null);
+  const job = await createJob({ mode, rootUrl, urls, sitemapUrl, options, auth }, req.user?.email || null);
   runJob(job).catch((err) => console.error(`Job ${job.id} failed:`, err));
   res.status(202).json({ jobId: job.id });
 });
@@ -235,7 +239,10 @@ app.get('/api/scan/:id/export/csv', async (req, res) => {
     const findings = job.findings || [];
     const target   = input.mode === 'crawl'
       ? (input.rootUrl || '—')
+      : input.mode === 'sitemap'
+      ? (input.sitemapUrl || '—')
       : `URL list (${(input.urls || []).length} URL${(input.urls||[]).length===1?'':'s'})`;
+    const MODE_LABELS = { crawl: 'Crawl', list: 'URL List', sitemap: 'Sitemap' };
     const dateStr  = new Date(job.createdAt)
       .toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
     const tags     = (input.options?.tags || []).join(', ') || 'None selected';
@@ -263,8 +270,12 @@ app.get('/api/scan/:id/export/csv', async (req, res) => {
     const gap  = () => '';        // blank separator row
     const head = (label) => row(label); // section header
 
-    const locationText = (f) => f.location?.line
-      ? `Line ${f.location.line}${f.location.column ? `, Col ${f.location.column}` : ''}`
+    // Location is an accessibility-only concept — matches the live results UI
+    // and PDF export. The column itself stays in the CSV (unlike the live UI,
+    // which hides the column when filtered to HTML/CSS), so HTML/CSS findings
+    // show "n/a" rather than being left blank.
+    const locationText = (f) => (f.type && f.type !== 'accessibility')
+      ? 'n/a'
       : (f.breadcrumb || []).slice(-3).join(' > ') || f.target_selector || '';
 
     const sortedFindings = findings
@@ -280,7 +291,7 @@ app.get('/api/scan/:id/export/csv', async (req, res) => {
       head('SCAN DETAILS'),
       row('Scan Date',     dateStr),
       row('Target',        target),
-      row('Mode',          input.mode === 'crawl' ? 'Crawl' : 'URL List'),
+      row('Mode',          MODE_LABELS[input.mode] || input.mode),
       row('Pages Scanned', job.pagesScanned),
       row('WCAG Tags',     tags),
       row('Total Findings', findings.length),

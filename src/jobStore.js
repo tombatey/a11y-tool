@@ -242,6 +242,8 @@ async function getScanEmailData(id) {
     status:       r.status,
     targetUrl:    input.mode === 'crawl'
                     ? input.rootUrl
+                    : input.mode === 'sitemap'
+                    ? input.sitemapUrl
                     : `URL list (${(input.urls || []).length} URLs)`,
     pagesScanned:  r.pages_scanned,
     findingsCount: r.findings_count,
