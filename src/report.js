@@ -70,8 +70,10 @@ function summaryCounts(findings) {
 
 function locationText(f) {
   // Location is an accessibility-only concept — matches the live results UI
-  // (public/app.js, public/history.html), which hides it entirely for HTML/CSS.
-  if (f.type && f.type !== 'accessibility') return '';
+  // (public/app.js, public/history.html). The column itself stays in the PDF
+  // (unlike the live UI, which hides the column when filtered to HTML/CSS),
+  // so HTML/CSS findings show "n/a" rather than being left blank.
+  if (f.type && f.type !== 'accessibility') return 'n/a';
 
   if (f.breadcrumb?.length) {
     return f.breadcrumb.slice(-3).join(' › ');

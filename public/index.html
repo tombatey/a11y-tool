@@ -248,6 +248,11 @@
 
   /* Location column — fixed width, content clips inside */
   .location-cell { width: 220px; max-width: 220px; overflow: hidden; }
+  .loc-na { color: var(--muted); font-size: 12px; }
+  /* Hidden when the type filter is isolated to HTML or CSS — Location is
+     accessibility-only, so the column would just be "n/a" the whole way down. */
+  .hide-location-col .location-header,
+  .hide-location-col .location-cell { display: none; }
   .loc-breadcrumb { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; margin-bottom: 5px; overflow: hidden; }
   .loc-breadcrumb .seg {
     font-family: ui-monospace, SFMono-Regular, monospace; font-size: 10px;
