@@ -130,6 +130,11 @@
 
   .url-cell { max-width: 200px; word-break: break-all; color: #017CA1; }
   .location-cell { width: 220px; max-width: 220px; overflow: hidden; }
+  .loc-na { color: var(--muted); font-size: 12px; }
+  /* Hidden when the type filter is isolated to HTML or CSS — Location is
+     accessibility-only, so the column would just be "n/a" the whole way down. */
+  .hide-location-col .location-header,
+  .hide-location-col .location-cell { display: none; }
   .loc-breadcrumb { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; margin-bottom: 5px; }
   .loc-breadcrumb .seg { font-family: ui-monospace, monospace; font-size: 10px; background: var(--paper); border: 1px solid var(--line); padding: 1px 5px; border-radius: 3px; color: var(--muted); white-space: nowrap; max-width: 180px; overflow: hidden; text-overflow: ellipsis; display: inline-block; }
   .loc-breadcrumb .seg.target { border-color: #02BFF8; color: #014357; }
@@ -462,12 +467,13 @@ function renderResults(job) {
     <div id="pagesPanelH" style="display:none"></div>
     ${findingsEmpty ? emptyFindingsMessage : `
     <table>
-      <thead><tr><th>Impact</th><th>Rule</th><th>URL</th><th>Location</th><th>Issue</th></tr></thead>
+      <thead><tr><th>Impact</th><th>Rule</th><th>URL</th><th class="location-header">Location</th><th>Issue</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>`}`;
 
   syncFilterUI();
   applyFilters();
+  updateLocationColumnVisibility();
 }
 
 let hPagesVisible = false;
@@ -584,6 +590,17 @@ function setTypeFilter(type) {
   });
   applyFilters();
   updateSummaryCounts();
+  updateLocationColumnVisibility();
+}
+
+// Location only has meaningful content for accessibility findings (see
+// renderLocation) — when the type filter is isolated to HTML or CSS, the
+// whole column is just "n/a" repeated down the table, so hide it outright
+// to reclaim the space. Reinstated for "All" or "Accessibility".
+function updateLocationColumnVisibility() {
+  document.getElementById('detailResults')?.classList.toggle(
+    'hide-location-col', activeTypes === 'html-validation' || activeTypes === 'css'
+  );
 }
 
 // Recomputes the Critical/Serious/Moderate/Minor summary numbers from the rows
@@ -624,7 +641,7 @@ function findingTagPills(f) {
 function renderLocation(f) {
   // Location (screenshot/breadcrumb/on-page position) is an accessibility-only
   // concept — HTML/CSS findings don't have anything meaningful to show here.
-  if (typeGroup(f.type) !== 'accessibility') return '';
+  if (typeGroup(f.type) !== 'accessibility') return '<span class="loc-na">n/a</span>';
 
   const loc = f.location;
   let html = '';

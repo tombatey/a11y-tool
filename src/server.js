@@ -271,9 +271,11 @@ app.get('/api/scan/:id/export/csv', async (req, res) => {
     const head = (label) => row(label); // section header
 
     // Location is an accessibility-only concept — matches the live results UI
-    // and PDF export, which hide it entirely for HTML/CSS findings.
+    // and PDF export. The column itself stays in the CSV (unlike the live UI,
+    // which hides the column when filtered to HTML/CSS), so HTML/CSS findings
+    // show "n/a" rather than being left blank.
     const locationText = (f) => (f.type && f.type !== 'accessibility')
-      ? ''
+      ? 'n/a'
       : (f.breadcrumb || []).slice(-3).join(' > ') || f.target_selector || '';
 
     const sortedFindings = findings

@@ -405,12 +405,13 @@ function renderResults(job) {
     ${urlFilterBar}
     ${findingsEmpty ? emptyFindingsMessage : `
     <table>
-      <thead><tr><th>Impact</th><th>Rule</th><th>URL</th><th>Location</th><th>Issue</th></tr></thead>
+      <thead><tr><th>Impact</th><th>Rule</th><th>URL</th><th class="location-header">Location</th><th>Issue</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>`}`;
 
   syncFilterUI();
   applyFilters();
+  updateLocationColumnVisibility();
   if (pagesVisible && currentJobId) loadPagesPanel(currentJobId, 'pagesPanel');
 }
 
@@ -522,6 +523,15 @@ function setTypeFilter(type) {
   });
   applyFilters();
   updateSummaryCounts();
+  updateLocationColumnVisibility();
+}
+
+// Location only has meaningful content for accessibility findings (see
+// renderLocation) — when the type filter is isolated to HTML or CSS, the
+// whole column is just "n/a" repeated down the table, so hide it outright
+// to reclaim the space. Reinstated for "All" or "Accessibility".
+function updateLocationColumnVisibility() {
+  resultsArea.classList.toggle('hide-location-col', activeTypes === 'html-validation' || activeTypes === 'css');
 }
 
 // Recomputes the Critical/Serious/Moderate/Minor summary numbers from the
@@ -589,7 +599,7 @@ function renderLocation(f) {
   // concept — HTML/CSS findings don't have anything meaningful to show here.
   // typeGroup() matches the same "missing type = accessibility" fallback used
   // elsewhere in this file (row data-type, type badge).
-  if (typeGroup(f.type) !== 'accessibility') return '';
+  if (typeGroup(f.type) !== 'accessibility') return '<span class="loc-na">n/a</span>';
 
   const loc = f.location;
   let html = '';
