@@ -13,6 +13,8 @@ then leaves `[Unreleased]` empty for the next cycle.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-08-20
+
 - Added new method of starting a scan by scanning a sitemap to obtain list of URLs, including nested sitemaps.
 - Results tidy-up to improve filtering of different results types, display accessibility pills for each A11y issue found, hide location column when filtering by CSS and HTML issue types and a few other fixes.
 
