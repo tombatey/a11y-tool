@@ -13,6 +13,8 @@ then leaves `[Unreleased]` empty for the next cycle.
 
 ## [Unreleased]
 
+- Fixed PDF export showing "URL list (0 URLs)" as the target for sitemap-mode scans instead of the sitemap URL.
+
 ## [0.4.0] - 2026-08-20
 
 - Added new method of starting a scan by scanning a sitemap to obtain list of URLs, including nested sitemaps.
