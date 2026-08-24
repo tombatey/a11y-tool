@@ -87,6 +87,8 @@ function generateReportHtml(job, pages = []) {
   const input    = job.input || {};
   const target   = input.mode === 'crawl'
     ? input.rootUrl
+    : input.mode === 'sitemap'
+    ? input.sitemapUrl
     : `URL list (${(input.urls || []).length} URL${(input.urls||[]).length === 1 ? '' : 's'})`;
   const tags     = (input.options?.tags || []).join(', ') || 'None selected';
   const findings = job.findings || [];
