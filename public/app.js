@@ -5,6 +5,8 @@ let activeFilters = new Set(['critical', 'serious', 'moderate', 'minor']);
 let activeTypes   = 'all'; // 'all' | 'accessibility' | 'html-validation' | 'css'
 let activeUrlFilter = null; // null = show all, string = filter to that URL
 let pagesVisible  = false;
+let viewMode      = 'occurrence'; // 'occurrence' = flat table, 'group' = grouped by issue
+let lastJob       = null; // most recently rendered job, so setViewMode can re-render without refetching
 
 // Populate header with current user's name
 fetch('/api/me')
@@ -299,7 +301,13 @@ async function stopScan() {
 
 function renderJob(job) {
   statusText.textContent = describeStatus(job);
+  lastJob = job;
   renderResults(job);
+}
+
+function setViewMode(mode) {
+  viewMode = mode;
+  if (lastJob) renderResults(lastJob);
 }
 
 function describeStatus(job) {
@@ -349,6 +357,8 @@ function renderResults(job) {
       ).join('')}
     </div>` : '';
 
+  const viewToggleHtml = GroupsView.renderToggle(viewMode, 'setViewMode');
+
   const summaryHtml = `
     <div class="summary-grid">
       <div class="summary-card"><div class="num">${job.pagesScanned}</div><div class="label">Pages scanned</div></div>
@@ -393,6 +403,7 @@ function renderResults(job) {
 
   resultsArea.innerHTML = `
     ${typeFilterHtml}
+    ${viewToggleHtml}
     ${summaryHtml}
     ${exportBar}
     <div class="pages-toggle">
@@ -402,17 +413,22 @@ function renderResults(job) {
       </button>
     </div>
     <div id="pagesPanel" style="display:${pagesVisible ? 'block' : 'none'}"></div>
-    ${urlFilterBar}
+    ${viewMode === 'group'
+      ? (findingsEmpty ? emptyFindingsMessage : '<div id="groupsArea"></div>')
+      : `${urlFilterBar}
     ${findingsEmpty ? emptyFindingsMessage : `
     <table>
       <thead><tr><th>Impact</th><th>Rule</th><th>URL</th><th class="location-header">Location</th><th>Issue</th></tr></thead>
       <tbody>${rows}</tbody>
-    </table>`}`;
+    </table>`}`}`;
 
   syncFilterUI();
   applyFilters();
   updateLocationColumnVisibility();
   if (pagesVisible && currentJobId) loadPagesPanel(currentJobId, 'pagesPanel');
+  if (viewMode === 'group' && !findingsEmpty && currentJobId) {
+    GroupsView.render(document.getElementById('groupsArea'), currentJobId);
+  }
 }
 
 async function togglePagesPanel(jobId) {

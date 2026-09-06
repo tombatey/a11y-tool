@@ -206,6 +206,17 @@
   }
   .type-filter-btn.active { border-color: var(--ink); color: var(--ink); font-weight: 500; background: var(--paper); }
 
+  .group-card { border: 1px solid var(--line); border-radius: 8px; margin-bottom: 10px; overflow: hidden; }
+  .group-card-header { display: flex; align-items: center; gap: 8px; padding: 10px 12px; cursor: pointer; flex-wrap: wrap; }
+  .group-card-header:hover { background: var(--paper); }
+  .group-title { font-size: 13px; font-weight: 500; }
+  .group-rule { font-size: 11px; color: var(--muted); font-family: ui-monospace, SFMono-Regular, monospace; }
+  .group-summary { margin-left: auto; font-size: 11px; color: var(--muted); white-space: nowrap; }
+  .group-card-body { border-top: 1px solid var(--line); padding: 4px 12px 10px; }
+  .group-help { padding: 8px 0 0; font-size: 12px; }
+  .group-card-body table { margin-top: 6px; }
+  .group-card-body code { font-size: 11px; background: var(--paper); padding: 1px 4px; border-radius: 3px; }
+
   .finding-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
   .finding-tag-pill {
     font-size: 10px; font-weight: 500; padding: 1px 7px; border-radius: 99px;
@@ -492,6 +503,7 @@
   <span>© 2026 WebDepend Ltd.</span>
 </footer>
 <script src="version-footer.js"></script>
+<script src="groupsView.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

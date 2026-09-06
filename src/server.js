@@ -7,6 +7,7 @@ const pool         = require('./db');
 const { passport, requireAuth } = require('./auth');
 const { createJob, getJob, listJobs, requestStop, getPages } = require('./jobStore');
 const { runJob }   = require('./orchestrator');
+const { buildGroups } = require('./grouping');
 const { generateReportHtml } = require('./report');
 const { generateChangelogHtml } = require('./changelogPage');
 const { readChangelog, getLatestRelease } = require('./changelog');
@@ -194,6 +195,17 @@ app.get('/api/scan/:id/pages', async (req, res) => {
   if (!job) return res.status(404).json({ error: 'Job not found' });
   const pages = await getPages(req.params.id);
   res.json(pages);
+});
+
+// ─── Issue grouping ───────────────────────────────────────────────────────────
+// Collapses this scan's findings into groups of "the same issue, found on
+// multiple URLs/elements" — prep for raising one Testing Manager bug per
+// group rather than one per individual occurrence (future work).
+app.get('/api/scan/:id/groups', async (req, res) => {
+  const job = await getJob(req.params.id);
+  if (!job) return res.status(404).json({ error: 'Job not found' });
+  const groups = buildGroups(req.params.id, job.findings);
+  res.json({ scanId: req.params.id, status: job.status, groupCount: groups.length, groups });
 });
 
 // ─── PDF export ───────────────────────────────────────────────────────────────
