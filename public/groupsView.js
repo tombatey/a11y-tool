@@ -24,12 +24,28 @@ window.GroupsView = (function () {
   // kept as a string (rather than a function reference) since the buttons
   // are rendered as an HTML string with inline onclick handlers, matching
   // the existing type-filter-btn pattern already used on both host pages.
+  //
+  // Uses its own view-toggle/view-toggle-btn classes rather than reusing
+  // type-filters/type-filter-btn — the host pages' setTypeFilter() does a
+  // document-wide querySelectorAll('.type-filter-btn') to sync the active
+  // class on the A11Y/HTML/CSS buttons, which would otherwise also match
+  // (and incorrectly clear the active state of) these toggle buttons.
   function renderToggle(viewMode, toggleFnName) {
     return `
-    <div class="type-filters">
-      <button class="type-filter-btn ${viewMode === 'occurrence' ? 'active' : ''}" onclick="${toggleFnName}('occurrence')">By occurrence</button>
-      <button class="type-filter-btn ${viewMode === 'group' ? 'active' : ''}" onclick="${toggleFnName}('group')">By issue</button>
+    <div class="view-toggle">
+      <button class="view-toggle-btn ${viewMode === 'occurrence' ? 'active' : ''}" onclick="${toggleFnName}('occurrence')">By occurrence</button>
+      <button class="view-toggle-btn ${viewMode === 'group' ? 'active' : ''}" onclick="${toggleFnName}('group')">By issue</button>
     </div>`;
+  }
+
+  // Mirrors the host pages' typeGroup() bucketing (accessibility / html-validation
+  // / css) so the type filter buttons can filter grouped issues too. Kept as its
+  // own copy rather than calling the host's global — this module stays usable
+  // without depending on exactly how each host page names that helper.
+  function typeCategory(type) {
+    if (!type || type === 'accessibility') return 'accessibility';
+    if (type === 'html-validation') return 'html-validation';
+    return 'css';
   }
 
   function occurrenceLocation(o) {
@@ -42,9 +58,9 @@ window.GroupsView = (function () {
     const bodyId = `groupBody-${idx}`;
     const occurrenceRows = g.occurrences.map((o) => `
       <tr>
-        <td class="url-cell">${escapeHtml(o.url)}</td>
-        <td>${occurrenceLocation(o)}</td>
-        <td>${o.html_snippet ? `<code>${escapeHtml(o.html_snippet)}</code>` : ''}</td>
+        <td class="occ-url">${escapeHtml(o.url)}</td>
+        <td class="occ-location">${occurrenceLocation(o)}</td>
+        <td class="occ-snippet">${o.html_snippet ? `<code>${escapeHtml(o.html_snippet)}</code>` : ''}</td>
       </tr>`).join('');
 
     return `
@@ -71,7 +87,11 @@ window.GroupsView = (function () {
     if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
   }
 
-  async function render(containerEl, scanId) {
+  // `activeType` mirrors the host page's type-filter state ('all' |
+  // 'accessibility' | 'html-validation' | 'css') so switching to "By issue"
+  // while a type filter is active shows only that type's groups, and
+  // clicking a type filter while already on "By issue" re-filters in place.
+  async function render(containerEl, scanId, activeType) {
     if (!containerEl) return;
     containerEl.innerHTML = '<div class="empty">Loading grouped issues…</div>';
     let data;
@@ -83,9 +103,17 @@ window.GroupsView = (function () {
       containerEl.innerHTML = '<div class="empty">Failed to load grouped issues.</div>';
       return;
     }
-    containerEl.innerHTML = data.groups.length
-      ? data.groups.map(renderGroup).join('')
-      : '<div class="empty">No issues to group.</div>';
+    const groups = (!activeType || activeType === 'all')
+      ? data.groups
+      : data.groups.filter((g) => typeCategory(g.type) === activeType);
+
+    if (data.groups.length === 0) {
+      containerEl.innerHTML = '<div class="empty">No issues to group.</div>';
+    } else if (groups.length === 0) {
+      containerEl.innerHTML = '<div class="empty">No issues match this filter.</div>';
+    } else {
+      containerEl.innerHTML = groups.map(renderGroup).join('');
+    }
   }
 
   return { renderToggle, render, _toggleBody };

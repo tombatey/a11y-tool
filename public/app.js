@@ -424,10 +424,11 @@ function renderResults(job) {
 
   syncFilterUI();
   applyFilters();
+  updateSummaryCounts();
   updateLocationColumnVisibility();
   if (pagesVisible && currentJobId) loadPagesPanel(currentJobId, 'pagesPanel');
   if (viewMode === 'group' && !findingsEmpty && currentJobId) {
-    GroupsView.render(document.getElementById('groupsArea'), currentJobId);
+    GroupsView.render(document.getElementById('groupsArea'), currentJobId, activeTypes);
   }
 }
 
@@ -540,6 +541,9 @@ function setTypeFilter(type) {
   applyFilters();
   updateSummaryCounts();
   updateLocationColumnVisibility();
+  if (viewMode === 'group' && currentJobId) {
+    GroupsView.render(document.getElementById('groupsArea'), currentJobId, activeTypes);
+  }
 }
 
 // Location only has meaningful content for accessibility findings (see
@@ -554,11 +558,15 @@ function updateLocationColumnVisibility() {
 // rows currently in the DOM, scoped to the active type filter — the severity
 // toggle (activeFilters) is a display lens on top of these numbers, not a
 // second filter that should shrink them, so it's deliberately not consulted here.
+// Recomputed from the underlying findings (rather than counting DOM rows)
+// so it stays correct in both view modes — the grouped ("By issue") view
+// has no tbody[data-impact] rows to count.
 function updateSummaryCounts() {
+  if (!lastJob) return;
   const counts = { critical: 0, serious: 0, moderate: 0, minor: 0 };
-  document.querySelectorAll('tbody tr[data-impact]').forEach((row) => {
-    const typeMatch = activeTypes === 'all' || row.dataset.type === activeTypes;
-    if (typeMatch && counts[row.dataset.impact] !== undefined) counts[row.dataset.impact]++;
+  lastJob.findings.forEach((f) => {
+    const typeMatch = activeTypes === 'all' || typeGroup(f.type) === activeTypes;
+    if (typeMatch && counts[f.impact] !== undefined) counts[f.impact]++;
   });
   ['critical', 'serious', 'moderate', 'minor'].forEach((i) => {
     const el = document.querySelector(`.summary-card[data-filter="${i}"] .num`);
