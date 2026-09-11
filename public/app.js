@@ -428,7 +428,7 @@ function renderResults(job) {
   updateLocationColumnVisibility();
   if (pagesVisible && currentJobId) loadPagesPanel(currentJobId, 'pagesPanel');
   if (viewMode === 'group' && !findingsEmpty && currentJobId) {
-    GroupsView.render(document.getElementById('groupsArea'), currentJobId, activeTypes);
+    GroupsView.render(document.getElementById('groupsArea'), currentJobId, activeTypes, activeFilters, writeSummaryCounts);
   }
 }
 
@@ -542,7 +542,7 @@ function setTypeFilter(type) {
   updateSummaryCounts();
   updateLocationColumnVisibility();
   if (viewMode === 'group' && currentJobId) {
-    GroupsView.render(document.getElementById('groupsArea'), currentJobId, activeTypes);
+    GroupsView.render(document.getElementById('groupsArea'), currentJobId, activeTypes, activeFilters, writeSummaryCounts);
   }
 }
 
@@ -558,20 +558,30 @@ function updateLocationColumnVisibility() {
 // rows currently in the DOM, scoped to the active type filter — the severity
 // toggle (activeFilters) is a display lens on top of these numbers, not a
 // second filter that should shrink them, so it's deliberately not consulted here.
+// Writes severity counts onto the summary cards. Shared by the occurrence
+// view's own tally (updateSummaryCounts, below) and the grouped view's
+// onCounts callback (see the GroupsView.render calls) — both produce the
+// same { critical, serious, moderate, minor } shape.
+function writeSummaryCounts(counts) {
+  ['critical', 'serious', 'moderate', 'minor'].forEach((i) => {
+    const el = document.querySelector(`.summary-card[data-filter="${i}"] .num`);
+    if (el) el.textContent = counts[i] || 0;
+  });
+}
+
 // Recomputed from the underlying findings (rather than counting DOM rows)
-// so it stays correct in both view modes — the grouped ("By issue") view
-// has no tbody[data-impact] rows to count.
+// so it stays correct regardless of DOM state. Only meaningful for the
+// occurrence view — "By issue" means counting groups, not findings, so the
+// grouped view gets its counts from GroupsView.render's onCounts callback
+// instead (see setTypeFilter/toggleFilter/renderResults).
 function updateSummaryCounts() {
-  if (!lastJob) return;
+  if (!lastJob || viewMode !== 'occurrence') return;
   const counts = { critical: 0, serious: 0, moderate: 0, minor: 0 };
   lastJob.findings.forEach((f) => {
     const typeMatch = activeTypes === 'all' || typeGroup(f.type) === activeTypes;
     if (typeMatch && counts[f.impact] !== undefined) counts[f.impact]++;
   });
-  ['critical', 'serious', 'moderate', 'minor'].forEach((i) => {
-    const el = document.querySelector(`.summary-card[data-filter="${i}"] .num`);
-    if (el) el.textContent = counts[i] || 0;
-  });
+  writeSummaryCounts(counts);
 }
 
 
@@ -597,6 +607,9 @@ function toggleFilter(impact) {
   }
   syncFilterUI();
   applyFilters();
+  if (viewMode === 'group' && currentJobId) {
+    GroupsView.render(document.getElementById('groupsArea'), currentJobId, activeTypes, activeFilters, writeSummaryCounts);
+  }
 }
 
 function syncFilterUI() {

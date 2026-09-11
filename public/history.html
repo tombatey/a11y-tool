@@ -509,7 +509,7 @@ function renderResults(job) {
     </table>`)}`;
 
   if (viewMode === 'group' && !findingsEmpty && scanId) {
-    GroupsView.render(document.getElementById('groupsArea'), scanId, activeTypes);
+    GroupsView.render(document.getElementById('groupsArea'), scanId, activeTypes, activeFilters, writeSummaryCounts);
   }
 
   syncFilterUI();
@@ -596,6 +596,10 @@ function toggleFilter(impact) {
   }
   syncFilterUI();
   applyFilters();
+  if (viewMode === 'group') {
+    const scanId = new URLSearchParams(window.location.search).get('id');
+    if (scanId) GroupsView.render(document.getElementById('groupsArea'), scanId, activeTypes, activeFilters, writeSummaryCounts);
+  }
 }
 
 function syncFilterUI() {
@@ -635,7 +639,7 @@ function setTypeFilter(type) {
   updateLocationColumnVisibility();
   if (viewMode === 'group') {
     const scanId = new URLSearchParams(window.location.search).get('id');
-    if (scanId) GroupsView.render(document.getElementById('groupsArea'), scanId, activeTypes);
+    if (scanId) GroupsView.render(document.getElementById('groupsArea'), scanId, activeTypes, activeFilters, writeSummaryCounts);
   }
 }
 
@@ -649,22 +653,30 @@ function updateLocationColumnVisibility() {
   );
 }
 
-// Recomputes the Critical/Serious/Moderate/Minor summary numbers from the rows
-// currently in the DOM, scoped to the active type filter — mirrors app.js.
+// Writes severity counts onto the summary cards. Shared by the occurrence
+// view's own tally (updateSummaryCounts, below) and the grouped view's
+// onCounts callback (see the GroupsView.render calls) — both produce the
+// same { critical, serious, moderate, minor } shape.
+function writeSummaryCounts(counts) {
+  ['critical', 'serious', 'moderate', 'minor'].forEach(i => {
+    const el = document.querySelector(`.summary-card[data-filter="${i}"] .num`);
+    if (el) el.textContent = counts[i] || 0;
+  });
+}
+
 // Recomputed from the underlying findings (rather than counting DOM rows)
-// so it stays correct in both view modes — the grouped ("By issue") view
-// has no tbody[data-impact] rows to count.
+// so it stays correct regardless of DOM state. Only meaningful for the
+// occurrence view — "By issue" means counting groups, not findings, so the
+// grouped view gets its counts from GroupsView.render's onCounts callback
+// instead (see setTypeFilter/toggleFilter/renderResults).
 function updateSummaryCounts() {
-  if (!lastDetailJob) return;
+  if (!lastDetailJob || viewMode !== 'occurrence') return;
   const counts = { critical: 0, serious: 0, moderate: 0, minor: 0 };
   (lastDetailJob.findings || []).forEach(f => {
     const typeMatch = activeTypes === 'all' || typeGroup(f.type) === activeTypes;
     if (typeMatch && counts[f.impact] !== undefined) counts[f.impact]++;
   });
-  ['critical', 'serious', 'moderate', 'minor'].forEach(i => {
-    const el = document.querySelector(`.summary-card[data-filter="${i}"] .num`);
-    if (el) el.textContent = counts[i] || 0;
-  });
+  writeSummaryCounts(counts);
 }
 
 // ── Per-finding WCAG/category tags ───────────────────────────────────────────────

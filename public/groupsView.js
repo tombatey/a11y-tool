@@ -91,7 +91,20 @@ window.GroupsView = (function () {
   // 'accessibility' | 'html-validation' | 'css') so switching to "By issue"
   // while a type filter is active shows only that type's groups, and
   // clicking a type filter while already on "By issue" re-filters in place.
-  async function render(containerEl, scanId, activeType) {
+  //
+  // `activeSeverities`, if given, is a Set of impact strings ('critical' |
+  // 'serious' | 'moderate' | 'minor') mirroring the host page's severity
+  // isolation state (clicking a severity summary card) — groups whose
+  // impact isn't in the set are hidden. Omit it to show every severity.
+  //
+  // `onCounts`, if given, is called with { critical, serious, moderate,
+  // minor } — the number of *groups* (not occurrences) at each severity
+  // among the type-filtered set, before severity filtering is applied — so
+  // the host page can show issue-level counts on its severity summary cards
+  // instead of occurrence-level ones while "By issue" is active. Mirrors
+  // how the occurrence view's own counts are type-filtered but not further
+  // narrowed by which severity is currently isolated.
+  async function render(containerEl, scanId, activeType, activeSeverities, onCounts) {
     if (!containerEl) return;
     containerEl.innerHTML = '<div class="empty">Loading grouped issues…</div>';
     let data;
@@ -103,9 +116,20 @@ window.GroupsView = (function () {
       containerEl.innerHTML = '<div class="empty">Failed to load grouped issues.</div>';
       return;
     }
-    const groups = (!activeType || activeType === 'all')
+
+    const typeFiltered = (!activeType || activeType === 'all')
       ? data.groups
       : data.groups.filter((g) => typeCategory(g.type) === activeType);
+
+    if (onCounts) {
+      const counts = { critical: 0, serious: 0, moderate: 0, minor: 0 };
+      typeFiltered.forEach((g) => { if (counts[g.impact] !== undefined) counts[g.impact]++; });
+      onCounts(counts);
+    }
+
+    const groups = activeSeverities
+      ? typeFiltered.filter((g) => activeSeverities.has(g.impact))
+      : typeFiltered;
 
     if (data.groups.length === 0) {
       containerEl.innerHTML = '<div class="empty">No issues to group.</div>';
