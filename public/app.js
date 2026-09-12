@@ -395,10 +395,15 @@ function renderResults(job) {
       </a>
     </div>`;
 
-  const urlFilterBar = activeUrlFilter ? `
-    <div class="url-filter-bar">
-      Showing findings for: <strong>${escapeHtml(activeUrlFilter)}</strong>
-      <button class="url-filter-clear" onclick="clearUrlFilter()">Show all pages</button>
+  // Shown above the results regardless of view mode — clicking a page in
+  // "Show pages scanned" sets this filter (see setUrlFilter) and it applies
+  // to both the flat table and the grouped view.
+  const urlFilterChipHtml = activeUrlFilter ? `
+    <div class="url-filter-chip-row">
+      <span class="url-filter-chip">
+        <span class="url-filter-chip-text">${escapeHtml(activeUrlFilter)}</span>
+        <button class="url-filter-chip-close" onclick="clearUrlFilter()" aria-label="Clear URL filter" title="Clear URL filter">&times;</button>
+      </span>
     </div>` : '';
 
   resultsArea.innerHTML = `
@@ -413,14 +418,14 @@ function renderResults(job) {
       </button>
     </div>
     <div id="pagesPanel" style="display:${pagesVisible ? 'block' : 'none'}"></div>
+    ${urlFilterChipHtml}
     ${viewMode === 'group'
       ? (findingsEmpty ? emptyFindingsMessage : '<div id="groupsArea"></div>')
-      : `${urlFilterBar}
-    ${findingsEmpty ? emptyFindingsMessage : `
+      : (findingsEmpty ? emptyFindingsMessage : `
     <table>
       <thead><tr><th>Impact</th><th>Rule</th><th>URL</th><th class="location-header">Location</th><th>Issue</th></tr></thead>
       <tbody>${rows}</tbody>
-    </table>`}`}`;
+    </table>`)}`;
 
   syncFilterUI();
   applyFilters();
@@ -428,7 +433,8 @@ function renderResults(job) {
   updateLocationColumnVisibility();
   if (pagesVisible && currentJobId) loadPagesPanel(currentJobId, 'pagesPanel');
   if (viewMode === 'group' && !findingsEmpty && currentJobId) {
-    GroupsView.render(document.getElementById('groupsArea'), currentJobId, activeTypes, activeFilters, writeSummaryCounts);
+    GroupsView.render(document.getElementById('groupsArea'), currentJobId,
+      { type: activeTypes, severities: activeFilters, url: activeUrlFilter }, writeSummaryCounts);
   }
 }
 
@@ -462,7 +468,7 @@ async function loadPagesPanel(jobId, panelId) {
           sc.minor_count    ? `<span class="ps minor">●&nbsp;${sc.minor_count} minor</span>`          : '',
         ].filter(Boolean).join('');
     const isActive = activeUrlFilter === p.url;
-    return `<tr data-url="${escapeHtml(p.url)}" class="${isActive ? 'active' : ''}" onclick="setUrlFilter('${escapeHtml(p.url)}', '${jobId}', '${panelId}')">
+    return `<tr data-url="${escapeHtml(p.url)}" class="${isActive ? 'active' : ''}" onclick="setUrlFilter('${escapeHtml(p.url)}')">
       <td class="page-url">${escapeHtml(p.url)}</td>
       <td><div class="page-sev">${sevHtml}</div></td>
     </tr>`;
@@ -475,29 +481,20 @@ async function loadPagesPanel(jobId, panelId) {
   </div>`;
 }
 
-function setUrlFilter(url, jobId, panelId) {
-  activeUrlFilter = activeUrlFilter === url ? null : url;
-  // Refresh panel to update active row
-  loadPagesPanel(jobId, panelId);
-  applyFilters();
-  // Show/hide url filter bar
-  const bar = document.querySelector('.url-filter-bar');
-  if (bar) bar.remove();
-  if (activeUrlFilter) {
-    const barHtml = document.createElement('div');
-    barHtml.className = 'url-filter-bar';
-    barHtml.innerHTML = `Showing findings for: <strong>${escapeHtml(activeUrlFilter)}</strong>
-      <button class="url-filter-clear" onclick="clearUrlFilter()">Show all pages</button>`;
-    const table = document.querySelector('tbody')?.closest('table');
-    if (table) table.before(barHtml);
-  }
+function setUrlFilter(url) {
+  const wasActive = activeUrlFilter === url;
+  activeUrlFilter = wasActive ? null : url;
+  // Selecting a URL always lands on the occurrence view — it's the most
+  // direct way to see exactly what's on that page. The user can still
+  // switch to "By issue" afterwards; the filter carries over either way.
+  // Clearing (clicking the same row again) leaves the current view alone.
+  if (!wasActive) viewMode = 'occurrence';
+  if (lastJob) renderResults(lastJob);
 }
 
 function clearUrlFilter() {
   activeUrlFilter = null;
-  document.querySelector('.url-filter-bar')?.remove();
-  document.querySelectorAll('.pages-panel tr[data-url]').forEach(r => r.classList.remove('active'));
-  applyFilters();
+  if (lastJob) renderResults(lastJob);
 }
 
 function typeGroup(type) {
@@ -542,7 +539,8 @@ function setTypeFilter(type) {
   updateSummaryCounts();
   updateLocationColumnVisibility();
   if (viewMode === 'group' && currentJobId) {
-    GroupsView.render(document.getElementById('groupsArea'), currentJobId, activeTypes, activeFilters, writeSummaryCounts);
+    GroupsView.render(document.getElementById('groupsArea'), currentJobId,
+      { type: activeTypes, severities: activeFilters, url: activeUrlFilter }, writeSummaryCounts);
   }
 }
 
@@ -579,7 +577,8 @@ function updateSummaryCounts() {
   const counts = { critical: 0, serious: 0, moderate: 0, minor: 0 };
   lastJob.findings.forEach((f) => {
     const typeMatch = activeTypes === 'all' || typeGroup(f.type) === activeTypes;
-    if (typeMatch && counts[f.impact] !== undefined) counts[f.impact]++;
+    const urlMatch  = !activeUrlFilter || f.url === activeUrlFilter;
+    if (typeMatch && urlMatch && counts[f.impact] !== undefined) counts[f.impact]++;
   });
   writeSummaryCounts(counts);
 }
@@ -608,7 +607,8 @@ function toggleFilter(impact) {
   syncFilterUI();
   applyFilters();
   if (viewMode === 'group' && currentJobId) {
-    GroupsView.render(document.getElementById('groupsArea'), currentJobId, activeTypes, activeFilters, writeSummaryCounts);
+    GroupsView.render(document.getElementById('groupsArea'), currentJobId,
+      { type: activeTypes, severities: activeFilters, url: activeUrlFilter }, writeSummaryCounts);
   }
 }
 

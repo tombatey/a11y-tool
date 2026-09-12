@@ -192,9 +192,19 @@
   .page-sev .ps.moderate { color: var(--moderate); }
   .page-sev .ps.minor    { color: var(--minor); }
   .page-sev .ps.none     { color: var(--line); }
-  .url-filter-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 12px; color: var(--muted); padding: 6px 10px; background: #f0f5f3; border-radius: 6px; }
-  .url-filter-bar strong { color: var(--accent); word-break: break-all; }
-  .url-filter-clear { margin-left: auto; background: none; border: none; cursor: pointer; font-size: 11px; color: var(--muted); text-decoration: underline; }
+  .url-filter-chip-row { margin-bottom: 12px; }
+  .url-filter-chip {
+    display: inline-flex; align-items: center; gap: 6px; max-width: 100%;
+    background: var(--paper); border: 1px solid var(--line); border-radius: 99px;
+    padding: 4px 6px 4px 12px; font-size: 12px; color: var(--ink);
+  }
+  .url-filter-chip-text { word-break: break-all; }
+  .url-filter-chip-close {
+    flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center;
+    width: 18px; height: 18px; border-radius: 50%; border: none; padding: 0;
+    background: var(--line); color: var(--ink); cursor: pointer; font-size: 13px; line-height: 1;
+  }
+  .url-filter-chip-close:hover { background: var(--critical); color: #fff; }
   .export-bar { display: flex; gap: 8px; margin-bottom: 16px; }
   .export-btn { display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px; border: 1px solid var(--border); border-radius: 6px; background: #fff; cursor: pointer; font-size: 12px; color: var(--text-secondary); font-family: inherit; text-decoration: none; }
   .export-btn:hover { border-color: var(--text-accent); color: var(--text-accent); }
@@ -336,6 +346,7 @@ async function viewScan(id) {
   activeFilters = new Set(['critical', 'serious', 'moderate', 'minor']);
   activeTypes   = 'all';
   viewMode      = 'occurrence';
+  hUrlFilter    = null;
   document.getElementById('listView').style.display = 'none';
   document.getElementById('detailView').style.display = 'block';
   document.getElementById('scanMeta').innerHTML = '';
@@ -490,6 +501,17 @@ function renderResults(job) {
       </a>
     </div>` : '';
 
+  // Shown above the results regardless of view mode — clicking a page in
+  // "Show pages scanned" sets this filter (see setHUrlFilter) and it
+  // applies to both the flat table and the grouped view.
+  const urlFilterChipHtml = hUrlFilter ? `
+    <div class="url-filter-chip-row">
+      <span class="url-filter-chip">
+        <span class="url-filter-chip-text">${escHtml(hUrlFilter)}</span>
+        <button class="url-filter-chip-close" onclick="clearHUrlFilter()" aria-label="Clear URL filter" title="Clear URL filter">&times;</button>
+      </span>
+    </div>` : '';
+
   el.innerHTML = `
     ${typeFilterHtml}
     ${viewToggleHtml}
@@ -497,9 +519,12 @@ function renderResults(job) {
     ${exportBar}
     <div class="pages-toggle">
       <span></span>
-      <button class="pages-toggle-btn" id="pagesToggleBtn" onclick="togglePagesPanelH('${scanId || ''}')">Show pages scanned</button>
+      <button class="pages-toggle-btn" id="pagesToggleBtn" onclick="togglePagesPanelH('${scanId || ''}')">
+        ${hPagesVisible ? 'Hide pages' : 'Show pages scanned'}
+      </button>
     </div>
-    <div id="pagesPanelH" style="display:none"></div>
+    <div id="pagesPanelH" style="display:${hPagesVisible ? 'block' : 'none'}"></div>
+    ${urlFilterChipHtml}
     ${viewMode === 'group'
       ? (findingsEmpty ? emptyFindingsMessage : '<div id="groupsArea"></div>')
       : (findingsEmpty ? emptyFindingsMessage : `
@@ -509,13 +534,15 @@ function renderResults(job) {
     </table>`)}`;
 
   if (viewMode === 'group' && !findingsEmpty && scanId) {
-    GroupsView.render(document.getElementById('groupsArea'), scanId, activeTypes, activeFilters, writeSummaryCounts);
+    GroupsView.render(document.getElementById('groupsArea'), scanId,
+      { type: activeTypes, severities: activeFilters, url: hUrlFilter }, writeSummaryCounts);
   }
 
   syncFilterUI();
   applyFilters();
   updateSummaryCounts();
   updateLocationColumnVisibility();
+  if (hPagesVisible && scanId) loadPagesPanelH(scanId);
 }
 
 let hPagesVisible = false;
@@ -547,7 +574,7 @@ async function loadPagesPanelH(jobId) {
           p.minor_count    ? `<span class="ps minor">● ${p.minor_count} minor</span>`          : '',
         ].filter(Boolean).join('');
     const isActive = hUrlFilter === p.url;
-    return `<tr data-url="${escHtml(p.url)}" class="${isActive ? 'active' : ''}" onclick="setHUrlFilter('${escHtml(p.url)}', '${jobId}')">
+    return `<tr data-url="${escHtml(p.url)}" class="${isActive ? 'active' : ''}" onclick="setHUrlFilter('${escHtml(p.url)}')">
       <td class="page-url">${escHtml(p.url)}</td>
       <td><div class="page-sev">${sevHtml}</div></td>
     </tr>`;
@@ -558,25 +585,20 @@ async function loadPagesPanelH(jobId) {
   </table></div>`;
 }
 
-function setHUrlFilter(url, jobId) {
-  hUrlFilter = hUrlFilter === url ? null : url;
-  loadPagesPanelH(jobId);
-  applyFilters();
-  document.querySelector('.url-filter-bar')?.remove();
-  if (hUrlFilter) {
-    const bar = document.createElement('div');
-    bar.className = 'url-filter-bar';
-    bar.innerHTML = `Showing findings for: <strong>${escHtml(hUrlFilter)}</strong>
-      <button class="url-filter-clear" onclick="clearHUrlFilter()">Show all pages</button>`;
-    document.querySelector('tbody')?.closest('table')?.before(bar);
-  }
+function setHUrlFilter(url) {
+  const wasActive = hUrlFilter === url;
+  hUrlFilter = wasActive ? null : url;
+  // Selecting a URL always lands on the occurrence view — it's the most
+  // direct way to see exactly what's on that page. The user can still
+  // switch to "By issue" afterwards; the filter carries over either way.
+  // Clearing (clicking the same row again) leaves the current view alone.
+  if (!wasActive) viewMode = 'occurrence';
+  if (lastDetailJob) renderResults(lastDetailJob);
 }
 
 function clearHUrlFilter() {
   hUrlFilter = null;
-  document.querySelector('.url-filter-bar')?.remove();
-  document.querySelectorAll('.pages-panel tr[data-url]').forEach(r => r.classList.remove('active'));
-  applyFilters();
+  if (lastDetailJob) renderResults(lastDetailJob);
 }
 
 // ── Filters ───────────────────────────────────────────────────────────────────
@@ -598,7 +620,8 @@ function toggleFilter(impact) {
   applyFilters();
   if (viewMode === 'group') {
     const scanId = new URLSearchParams(window.location.search).get('id');
-    if (scanId) GroupsView.render(document.getElementById('groupsArea'), scanId, activeTypes, activeFilters, writeSummaryCounts);
+    if (scanId) GroupsView.render(document.getElementById('groupsArea'), scanId,
+      { type: activeTypes, severities: activeFilters, url: hUrlFilter }, writeSummaryCounts);
   }
 }
 
@@ -639,7 +662,8 @@ function setTypeFilter(type) {
   updateLocationColumnVisibility();
   if (viewMode === 'group') {
     const scanId = new URLSearchParams(window.location.search).get('id');
-    if (scanId) GroupsView.render(document.getElementById('groupsArea'), scanId, activeTypes, activeFilters, writeSummaryCounts);
+    if (scanId) GroupsView.render(document.getElementById('groupsArea'), scanId,
+      { type: activeTypes, severities: activeFilters, url: hUrlFilter }, writeSummaryCounts);
   }
 }
 
@@ -674,7 +698,8 @@ function updateSummaryCounts() {
   const counts = { critical: 0, serious: 0, moderate: 0, minor: 0 };
   (lastDetailJob.findings || []).forEach(f => {
     const typeMatch = activeTypes === 'all' || typeGroup(f.type) === activeTypes;
-    if (typeMatch && counts[f.impact] !== undefined) counts[f.impact]++;
+    const urlMatch  = !hUrlFilter || f.url === hUrlFilter;
+    if (typeMatch && urlMatch && counts[f.impact] !== undefined) counts[f.impact]++;
   });
   writeSummaryCounts(counts);
 }

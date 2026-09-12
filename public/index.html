@@ -170,9 +170,19 @@
   .page-sev .ps.moderate { color: var(--moderate); }
   .page-sev .ps.minor    { color: var(--minor); }
   .page-sev .ps.none     { color: var(--line); }
-  .url-filter-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 12px; color: var(--muted); padding: 6px 10px; background: #f0f5f3; border-radius: 6px; }
-  .url-filter-bar strong { color: var(--accent); word-break: break-all; }
-  .url-filter-clear { margin-left: auto; background: none; border: none; cursor: pointer; font-size: 11px; color: var(--muted); text-decoration: underline; }
+  .url-filter-chip-row { margin-bottom: 12px; }
+  .url-filter-chip {
+    display: inline-flex; align-items: center; gap: 6px; max-width: 100%;
+    background: var(--paper); border: 1px solid var(--line); border-radius: 99px;
+    padding: 4px 6px 4px 12px; font-size: 12px; color: var(--ink);
+  }
+  .url-filter-chip-text { word-break: break-all; }
+  .url-filter-chip-close {
+    flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center;
+    width: 18px; height: 18px; border-radius: 50%; border: none; padding: 0;
+    background: var(--line); color: var(--ink); cursor: pointer; font-size: 13px; line-height: 1;
+  }
+  .url-filter-chip-close:hover { background: var(--critical); color: #fff; }
 
   /* Export buttons */
   .export-bar { display: flex; gap: 8px; margin-bottom: 16px; }

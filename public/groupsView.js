@@ -54,9 +54,17 @@ window.GroupsView = (function () {
     return path ? escapeHtml(path) : '';
   }
 
-  function renderGroup(g, idx) {
+  // `urlFilter`, if given, narrows a group's own occurrence list (and the
+  // "N occurrences across M URLs" summary) down to just that URL — mirroring
+  // how the flat occurrence table hides non-matching rows outright, rather
+  // than leaving the group's header showing scan-wide totals while only
+  // some of its occurrences are actually shown underneath.
+  function renderGroup(g, idx, urlFilter) {
+    const occurrences = urlFilter ? g.occurrences.filter((o) => o.url === urlFilter) : g.occurrences;
+    const occurrenceCount = urlFilter ? occurrences.length : g.occurrence_count;
+    const urlCount = urlFilter ? 1 : g.url_count;
     const bodyId = `groupBody-${idx}`;
-    const occurrenceRows = g.occurrences.map((o) => `
+    const occurrenceRows = occurrences.map((o) => `
       <tr>
         <td class="occ-url">${escapeHtml(o.url)}</td>
         <td class="occ-location">${occurrenceLocation(o)}</td>
@@ -70,7 +78,7 @@ window.GroupsView = (function () {
         <span class="type-badge ${g.type}">${TYPE_LABEL[g.type] || g.type}</span>
         <span class="group-title">${escapeHtml(g.title)}</span>
         ${g.rule_id ? `<span class="group-rule">${escapeHtml(g.rule_id)}</span>` : ''}
-        <span class="group-summary">${g.occurrence_count} occurrence${g.occurrence_count === 1 ? '' : 's'} across ${g.url_count} URL${g.url_count === 1 ? '' : 's'}</span>
+        <span class="group-summary">${occurrenceCount} occurrence${occurrenceCount === 1 ? '' : 's'} across ${urlCount} URL${urlCount === 1 ? '' : 's'}</span>
       </div>
       <div class="group-card-body" id="${bodyId}" style="display:none">
         ${g.help_url ? `<div class="group-help"><a href="${escapeHtml(g.help_url)}" target="_blank" rel="noopener">Details</a></div>` : ''}
@@ -87,25 +95,31 @@ window.GroupsView = (function () {
     if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
   }
 
-  // `activeType` mirrors the host page's type-filter state ('all' |
-  // 'accessibility' | 'html-validation' | 'css') so switching to "By issue"
-  // while a type filter is active shows only that type's groups, and
-  // clicking a type filter while already on "By issue" re-filters in place.
-  //
-  // `activeSeverities`, if given, is a Set of impact strings ('critical' |
-  // 'serious' | 'moderate' | 'minor') mirroring the host page's severity
-  // isolation state (clicking a severity summary card) — groups whose
-  // impact isn't in the set are hidden. Omit it to show every severity.
+  // `filters` mirrors the host page's current filter state:
+  //   - type: 'all' | 'accessibility' | 'html-validation' | 'css' — so
+  //     switching to "By issue" while a type filter is active shows only
+  //     that type's groups, and clicking a type filter while already on
+  //     "By issue" re-filters in place.
+  //   - severities: a Set of impact strings ('critical' | 'serious' |
+  //     'moderate' | 'minor'), mirroring the severity-isolation state
+  //     (clicking a severity summary card) — groups whose impact isn't in
+  //     the set are hidden. Omit/null to show every severity.
+  //   - url: a single URL string, mirroring the "Show pages scanned" URL
+  //     filter — only groups with at least one occurrence on that URL are
+  //     shown, and each shown group's own occurrence list/summary is
+  //     narrowed to just that URL too (see renderGroup). Omit/null to show
+  //     every URL.
   //
   // `onCounts`, if given, is called with { critical, serious, moderate,
   // minor } — the number of *groups* (not occurrences) at each severity
-  // among the type-filtered set, before severity filtering is applied — so
-  // the host page can show issue-level counts on its severity summary cards
-  // instead of occurrence-level ones while "By issue" is active. Mirrors
-  // how the occurrence view's own counts are type-filtered but not further
-  // narrowed by which severity is currently isolated.
-  async function render(containerEl, scanId, activeType, activeSeverities, onCounts) {
+  // among the type+URL-filtered set, before severity filtering is applied —
+  // so the host page can show issue-level counts on its severity summary
+  // cards instead of occurrence-level ones while "By issue" is active.
+  // Mirrors how the occurrence view's own counts are type/URL-filtered but
+  // not further narrowed by which severity is currently isolated.
+  async function render(containerEl, scanId, filters, onCounts) {
     if (!containerEl) return;
+    const { type: activeType, severities: activeSeverities, url: urlFilter } = filters || {};
     containerEl.innerHTML = '<div class="empty">Loading grouped issues…</div>';
     let data;
     try {
@@ -121,22 +135,26 @@ window.GroupsView = (function () {
       ? data.groups
       : data.groups.filter((g) => typeCategory(g.type) === activeType);
 
+    const urlFiltered = urlFilter
+      ? typeFiltered.filter((g) => g.urls.includes(urlFilter))
+      : typeFiltered;
+
     if (onCounts) {
       const counts = { critical: 0, serious: 0, moderate: 0, minor: 0 };
-      typeFiltered.forEach((g) => { if (counts[g.impact] !== undefined) counts[g.impact]++; });
+      urlFiltered.forEach((g) => { if (counts[g.impact] !== undefined) counts[g.impact]++; });
       onCounts(counts);
     }
 
     const groups = activeSeverities
-      ? typeFiltered.filter((g) => activeSeverities.has(g.impact))
-      : typeFiltered;
+      ? urlFiltered.filter((g) => activeSeverities.has(g.impact))
+      : urlFiltered;
 
     if (data.groups.length === 0) {
       containerEl.innerHTML = '<div class="empty">No issues to group.</div>';
     } else if (groups.length === 0) {
       containerEl.innerHTML = '<div class="empty">No issues match this filter.</div>';
     } else {
-      containerEl.innerHTML = groups.map(renderGroup).join('');
+      containerEl.innerHTML = groups.map((g, idx) => renderGroup(g, idx, urlFilter)).join('');
     }
   }
 
