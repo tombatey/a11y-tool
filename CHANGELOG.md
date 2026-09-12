@@ -13,6 +13,8 @@ then leaves `[Unreleased]` empty for the next cycle.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-09-12
+
 - New feature - ability to group findings that occur on each URL into a single issue containing all the URLs and locations where each occurrence is found. This condenses the results into an easier to read list of issues.
 - New By issue tab switches the results of a scan to group occurrences by issue.
 - When By issue is selected, click on an issue to expand and show all the occurrences of that issue.
