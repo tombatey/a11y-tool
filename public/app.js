@@ -487,8 +487,12 @@ function setUrlFilter(url) {
   // Selecting a URL always lands on the occurrence view — it's the most
   // direct way to see exactly what's on that page. The user can still
   // switch to "By issue" afterwards; the filter carries over either way.
-  // Clearing (clicking the same row again) leaves the current view alone.
   if (!wasActive) viewMode = 'occurrence';
+  // Close the panel on every click here (select or clear) — leaving it open
+  // hid the actual effect of the click (the chip + filtered results appear
+  // below it, off-screen or easy to miss), making it look like nothing
+  // happened. The chip's own × is how the filter gets cleared afterwards.
+  pagesVisible = false;
   if (lastJob) renderResults(lastJob);
 }
 
