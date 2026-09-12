@@ -13,6 +13,12 @@ then leaves `[Unreleased]` empty for the next cycle.
 
 ## [Unreleased]
 
+- New feature - ability to group findings that occur on each URL into a single issue containing all the URLs and locations where each occurrence is found. This condenses the results into an easier to read list of issues.
+- New By issue tab switches the results of a scan to group occurrences by issue.
+- When By issue is selected, click on an issue to expand and show all the occurrences of that issue.
+- Updated filtering and severity counts when switching between By occurrence and By issue tabs.
+- When expanding pages canned list, it is now possible to click on a page to show a filtered list of issues just for that page. Click the close icon next to the page chip to go back to all results.
+
 ## [0.4.1] - 2026-08-24
 
 - Fixed PDF export showing "URL list (0 URLs)" as the target for sitemap-mode scans instead of the sitemap URL.

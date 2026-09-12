@@ -162,6 +162,7 @@
   .pages-panel tr.active td { background: #f0f5f3; }
   .pages-panel tr[data-url] { cursor: pointer; }
   .pages-panel tr[data-url]:hover td { background: #f7f7f5; }
+  .pages-panel-note { padding: 8px 12px; font-size: 11px; color: var(--muted); border-top: 1px solid var(--line); }
   .page-url { color: var(--accent); word-break: break-all; max-width: 500px; }
   .page-sev { display: flex; gap: 8px; white-space: nowrap; }
   .page-sev .ps { font-size: 11px; font-weight: 600; }
@@ -170,9 +171,19 @@
   .page-sev .ps.moderate { color: var(--moderate); }
   .page-sev .ps.minor    { color: var(--minor); }
   .page-sev .ps.none     { color: var(--line); }
-  .url-filter-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 12px; color: var(--muted); padding: 6px 10px; background: #f0f5f3; border-radius: 6px; }
-  .url-filter-bar strong { color: var(--accent); word-break: break-all; }
-  .url-filter-clear { margin-left: auto; background: none; border: none; cursor: pointer; font-size: 11px; color: var(--muted); text-decoration: underline; }
+  .url-filter-chip-row { margin-bottom: 12px; }
+  .url-filter-chip {
+    display: inline-flex; align-items: center; gap: 6px; max-width: 100%;
+    background: var(--paper); border: 1px solid var(--line); border-radius: 99px;
+    padding: 4px 6px 4px 12px; font-size: 12px; color: var(--ink);
+  }
+  .url-filter-chip-text { word-break: break-all; }
+  .url-filter-chip-close {
+    flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center;
+    width: 18px; height: 18px; border-radius: 50%; border: none; padding: 0;
+    background: var(--line); color: var(--ink); cursor: pointer; font-size: 13px; line-height: 1;
+  }
+  .url-filter-chip-close:hover { background: var(--critical); color: #fff; }
 
   /* Export buttons */
   .export-bar { display: flex; gap: 8px; margin-bottom: 16px; }
@@ -205,6 +216,30 @@
     font-family: inherit;
   }
   .type-filter-btn.active { border-color: var(--ink); color: var(--ink); font-weight: 500; background: var(--paper); }
+
+  .view-toggle { display: flex; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; }
+  .view-toggle-btn {
+    padding: 4px 12px; border: 1px solid var(--line); border-radius: 99px;
+    background: #fff; cursor: pointer; font-size: 12px; color: var(--muted);
+    font-family: inherit;
+  }
+  .view-toggle-btn.active { border-color: var(--ink); color: var(--ink); font-weight: 500; background: var(--paper); }
+
+  .group-card { border: 1px solid var(--line); border-radius: 8px; margin-bottom: 10px; overflow: hidden; }
+  .group-card-header { display: flex; align-items: center; gap: 8px; padding: 10px 12px; cursor: pointer; flex-wrap: wrap; }
+  .group-card-header:hover { background: var(--paper); }
+  .group-title { font-size: 13px; font-weight: 500; }
+  .group-rule { font-size: 11px; color: var(--muted); font-family: ui-monospace, SFMono-Regular, monospace; }
+  .group-summary { margin-left: auto; font-size: 11px; color: var(--muted); white-space: nowrap; }
+  .group-tags { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 4px; }
+  .group-card-body { border-top: 1px solid var(--line); padding: 4px 12px 10px; }
+  .group-help { padding: 8px 0 0; font-size: 12px; }
+  .group-card-body table { margin-top: 6px; table-layout: fixed; }
+  .group-card-body td { word-break: break-word; }
+  .group-card-body .occ-url { width: 32%; color: #017CA1; }
+  .group-card-body .occ-location { width: 18%; }
+  .group-card-body .occ-snippet { width: 50%; }
+  .group-card-body code { font-size: 11px; background: var(--paper); padding: 1px 4px; border-radius: 3px; word-break: break-all; white-space: pre-wrap; }
 
   .finding-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
   .finding-tag-pill {
@@ -492,6 +527,7 @@
   <span>© 2026 WebDepend Ltd.</span>
 </footer>
 <script src="version-footer.js"></script>
+<script src="groupsView.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

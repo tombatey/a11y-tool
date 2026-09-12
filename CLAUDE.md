@@ -43,6 +43,7 @@ a11y-tool/
 │   ├── crypto.js          # AES-256-GCM helpers for encrypting stored auth passwords
 │   ├── email.js           # Loops.so scan-complete notification
 │   ├── report.js          # Self-contained HTML report generator for PDF export
+│   ├── grouping.js        # Collapses same-issue findings across URLs into groups (see below)
 │   └── validators/
 │       ├── html.js        # Posts rendered HTML to local vnu server, normalises findings
 │       └── css.js         # Fetches stylesheets, runs W3C API + stylelint, deduplicates
@@ -50,6 +51,7 @@ a11y-tool/
 │   ├── index.html         # Main scanner UI (CSS variables, layout)
 │   ├── app.js             # Main scanner frontend logic
 │   ├── history.html       # Scan history — list and detail views
+│   ├── groupsView.js      # Shared "By issue" grouped-results view (loaded by both pages above)
 │   ├── login.html         # Google OAuth login page
 │   ├── team.html          # Team management UI
 │   └── images/
@@ -239,7 +241,7 @@ Screenshots are base64 data URLs in-memory during scanning. `processFinding()` i
 
 ### Frontend architecture
 
-Three pages (`index.html`, `history.html`, `team.html`) each contain their own full CSS in `<style>` and are self-contained. `app.js` drives `index.html`. `history.html` and `team.html` have their JS inline in `<script>` at the bottom.
+Three pages (`index.html`, `history.html`, `team.html`) each contain their own full CSS in `<style>` and are self-contained. `app.js` drives `index.html`. `history.html` and `team.html` have their JS inline in `<script>` at the bottom. Each page's own logic (e.g. `typeGroup`/`renderLocation`) is duplicated rather than shared — the one exception is `groupsView.js` (and `version-footer.js`), a plain `<script src="...">` loaded by both `index.html` and `history.html`, no bundler involved.
 
 CSS uses a set of CSS variables defined in each page's `:root` block using the WebDepend colour palette:
 - `--ink: #014357` (Blue 900 — headings, button text)
@@ -250,11 +252,21 @@ CSS uses a set of CSS variables defined in each page's `:root` block using the W
 - `--accent: #017CA1` (Blue 800 — links, active states)
 - Primary button: `#02BFF8` bg (Blue 600), `#014357` text (Blue 900)
 
+### Issue grouping ("By issue" view)
+
+`src/grouping.js` collapses a scan's findings that represent the same underlying issue (found on multiple URLs/elements) into groups — prep for a future Testing Manager integration that will raise one bug per group instead of one per occurrence. It's a pure function, `buildGroups(scanId, findings) -> groups[]`, computed on demand from the same `findings` rows `getJob()` already returns — no new table, no migration.
+
+- **Grouping key**: axe-core, stylelint, and w3c-css *errors* have a genuinely stable `rule_id`, so those group by `rule_id` directly. vnu (HTML validation) and w3c-css *warnings* don't — vnu's `rule_id` is a slug of the entire free-text message (including the specific attribute/element it names), and every w3c-css warning shares the literal `rule_id` `'css-warning'`. For those, `grouping.js` normalizes the message (quoted/variable tokens → `"…"` placeholders) to recover a reusable template as the key, e.g. `Attribute "foo" not allowed on element "div"` and `Attribute "bar" not allowed on element "span"` both collapse to one group. Changing that normalization logic changes group identity for message-derived groups — relevant if a future feature ever persists state keyed by `group_key`.
+- **`group_key` format**: `` `${scanId}|${type}|${source_tool}|${keyKind}:${keyValue}` `` — namespaced so nothing collides across scans/types/tools.
+- **API**: `GET /api/scan/:id/groups` (in `server.js`) returns `{ scanId, status, groupCount, groups }`. Each group carries `occurrences[]` (url, target_selector, breadcrumb, html_snippet, failure_summary, location), the union of `wcag_tags`, worst `impact`, and distinct `urls`/`url_count`.
+- **Frontend**: `public/groupsView.js`, a shared script loaded by both `index.html` and `history.html` (mirrors the `version-footer.js` pattern), renders group cards and owns all three filter dimensions together — `GroupsView.render(containerEl, scanId, { type, severities, url }, onCounts)`. `onCounts` reports per-severity *group* counts (not occurrence counts) back to the host page so its severity summary cards read correctly while "By issue" is selected. A `urlFilter` also narrows each shown group's own occurrence list/counts to just that URL, mirroring how the flat table hides non-matching rows outright.
+- **Known gap**: CSS findings are keyed by their stylesheet's URL, not the page that referenced it (see "Known constraints and gotchas" below) — so a CSS group's `urls`/occurrences are stylesheet URLs, and filtering "By issue" to a specific *page* URL will never match a CSS group.
+
 ### API conventions
 
 All API routes are in `server.js`. Protected by `requireAuth` middleware (placed before `express.static`). Public routes: `/login`, `/auth/google`, `/auth/google/callback`, `/auth/logout`.
 
-API returns JSON. Scan results are returned with the full findings array on every poll — no pagination currently. For scans with many findings this is acceptable given the internal-tool context.
+API returns JSON. Scan results are returned with the full findings array on every poll — no pagination currently. For scans with many findings this is acceptable given the internal-tool context. `GET /api/scan/:id/groups` is the one exception to "just returns what's in the DB" — see "Issue grouping" above.
 
 ---
 
@@ -336,3 +348,4 @@ Full workflow:
 - **Form login has no retry and no MFA support** — one attempt at filling and submitting the configured selectors; a wrong selector, a CAPTCHA, or a 2FA step all fail the scan the same way (recorded as a scan error, status `error`). Re-check selectors with DevTools if a form-login scan keeps failing.
 - **`CREDENTIALS_ENCRYPTION_KEY` must be set before any basic-auth/form-login scan is submitted** — `src/crypto.js` throws immediately if it's missing or not a 32-byte hex string. It is not required for scans that don't use `auth`.
 - **Target-site credentials are never reusable** — by design there's no saved "site" record; every scan against a protected target needs its credentials/selectors re-entered.
+- **`findings.url` means "the page" for accessibility/HTML but "the stylesheet" for CSS** — `css.js` sets a CSS finding's `url` to the stylesheet resource it validated (or `{pageUrl}#inline-style-N` for inline `<style>` blocks), not the page(s) that reference it. Any code that filters/groups findings by exact URL match (the "pages scanned" panel, the URL filter chip, `grouping.js`'s per-group `urls`) therefore never attributes a CSS finding to a specific page. `app.js`/`history.html` recompute the pages panel's displayed counts client-side from this same exact-match rule (rather than trusting the scan-time pre-aggregated `pages.findings_count`, which does fold CSS findings into a page's count) specifically so the panel doesn't show numbers the URL filter then can't reproduce — but this means the pages panel's counts and the CSV/PDF export's "Pages Scanned" section (still built server-side from the original `pages.findings_count`) can now disagree for pages with CSS issues. Fixing that fully would mean tracking which page a CSS finding was discovered via as a separate field from its own resource URL — not implemented.

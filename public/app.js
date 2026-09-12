@@ -5,6 +5,8 @@ let activeFilters = new Set(['critical', 'serious', 'moderate', 'minor']);
 let activeTypes   = 'all'; // 'all' | 'accessibility' | 'html-validation' | 'css'
 let activeUrlFilter = null; // null = show all, string = filter to that URL
 let pagesVisible  = false;
+let viewMode      = 'occurrence'; // 'occurrence' = flat table, 'group' = grouped by issue
+let lastJob       = null; // most recently rendered job, so setViewMode can re-render without refetching
 
 // Populate header with current user's name
 fetch('/api/me')
@@ -299,7 +301,13 @@ async function stopScan() {
 
 function renderJob(job) {
   statusText.textContent = describeStatus(job);
+  lastJob = job;
   renderResults(job);
+}
+
+function setViewMode(mode) {
+  viewMode = mode;
+  if (lastJob) renderResults(lastJob);
 }
 
 function describeStatus(job) {
@@ -349,6 +357,8 @@ function renderResults(job) {
       ).join('')}
     </div>` : '';
 
+  const viewToggleHtml = GroupsView.renderToggle(viewMode, 'setViewMode');
+
   const summaryHtml = `
     <div class="summary-grid">
       <div class="summary-card"><div class="num">${job.pagesScanned}</div><div class="label">Pages scanned</div></div>
@@ -385,14 +395,20 @@ function renderResults(job) {
       </a>
     </div>`;
 
-  const urlFilterBar = activeUrlFilter ? `
-    <div class="url-filter-bar">
-      Showing findings for: <strong>${escapeHtml(activeUrlFilter)}</strong>
-      <button class="url-filter-clear" onclick="clearUrlFilter()">Show all pages</button>
+  // Shown above the results regardless of view mode — clicking a page in
+  // "Show pages scanned" sets this filter (see setUrlFilter) and it applies
+  // to both the flat table and the grouped view.
+  const urlFilterChipHtml = activeUrlFilter ? `
+    <div class="url-filter-chip-row">
+      <span class="url-filter-chip">
+        <span class="url-filter-chip-text">${escapeHtml(activeUrlFilter)}</span>
+        <button class="url-filter-chip-close" onclick="clearUrlFilter()" aria-label="Clear URL filter" title="Clear URL filter">&times;</button>
+      </span>
     </div>` : '';
 
   resultsArea.innerHTML = `
     ${typeFilterHtml}
+    ${viewToggleHtml}
     ${summaryHtml}
     ${exportBar}
     <div class="pages-toggle">
@@ -402,17 +418,25 @@ function renderResults(job) {
       </button>
     </div>
     <div id="pagesPanel" style="display:${pagesVisible ? 'block' : 'none'}"></div>
-    ${urlFilterBar}
-    ${findingsEmpty ? emptyFindingsMessage : `
-    <table>
+    ${urlFilterChipHtml}
+    ${viewMode === 'group'
+      ? (findingsEmpty ? emptyFindingsMessage : '<div id="groupsArea"></div>')
+      : (findingsEmpty ? emptyFindingsMessage : `
+    <table id="findingsTable">
       <thead><tr><th>Impact</th><th>Rule</th><th>URL</th><th class="location-header">Location</th><th>Issue</th></tr></thead>
       <tbody>${rows}</tbody>
-    </table>`}`;
+    </table>
+    <div id="occurrenceEmptyState" class="empty" style="display:none">No findings match the current filters.</div>`)}`;
 
   syncFilterUI();
   applyFilters();
+  updateSummaryCounts();
   updateLocationColumnVisibility();
   if (pagesVisible && currentJobId) loadPagesPanel(currentJobId, 'pagesPanel');
+  if (viewMode === 'group' && !findingsEmpty && currentJobId) {
+    GroupsView.render(document.getElementById('groupsArea'), currentJobId,
+      { type: activeTypes, severities: activeFilters, url: activeUrlFilter }, writeSummaryCounts);
+  }
 }
 
 async function togglePagesPanel(jobId) {
@@ -425,6 +449,26 @@ async function togglePagesPanel(jobId) {
   if (pagesVisible && jobId) await loadPagesPanel(jobId, 'pagesPanel');
 }
 
+// CSS findings are attributed to their own stylesheet's URL (a page's
+// external/inline stylesheet resource), not the page(s) that reference
+// it — so they can never match a page's own URL. Recomputing counts here
+// from the findings actually on the page (same url === url match the URL
+// filter itself uses), rather than trusting the scan-time pre-aggregated
+// pages.findings_count/severity counts from the API, keeps this panel
+// exactly consistent with what clicking a row then filters to — a CSS-only
+// page will honestly show "No findings" here even though it has CSS issues
+// (visible via the CSS type filter, just not attributable to one page).
+function pageCountsFromFindings(findings, url) {
+  const counts = { critical_count: 0, serious_count: 0, moderate_count: 0, minor_count: 0, findings_count: 0 };
+  findings.forEach((f) => {
+    if (f.url !== url) return;
+    counts.findings_count++;
+    const key = `${f.impact}_count`;
+    if (counts[key] !== undefined) counts[key]++;
+  });
+  return counts;
+}
+
 async function loadPagesPanel(jobId, panelId) {
   const panel = document.getElementById(panelId);
   if (!panel) return;
@@ -434,8 +478,10 @@ async function loadPagesPanel(jobId, panelId) {
     panel.innerHTML = '<div class="empty" style="padding:12px">No pages recorded.</div>';
     return;
   }
+  const findings = lastJob?.findings || [];
+  const hasCss = findings.some((f) => typeGroup(f.type) === 'css');
   const rows = pages.map(p => {
-    const sc = p;
+    const sc = pageCountsFromFindings(findings, p.url);
     const sevHtml = (sc.findings_count === 0)
       ? '<span class="ps none">No findings</span>'
       : [
@@ -445,42 +491,41 @@ async function loadPagesPanel(jobId, panelId) {
           sc.minor_count    ? `<span class="ps minor">●&nbsp;${sc.minor_count} minor</span>`          : '',
         ].filter(Boolean).join('');
     const isActive = activeUrlFilter === p.url;
-    return `<tr data-url="${escapeHtml(p.url)}" class="${isActive ? 'active' : ''}" onclick="setUrlFilter('${escapeHtml(p.url)}', '${jobId}', '${panelId}')">
+    return `<tr data-url="${escapeHtml(p.url)}" class="${isActive ? 'active' : ''}" onclick="setUrlFilter('${escapeHtml(p.url)}')">
       <td class="page-url">${escapeHtml(p.url)}</td>
       <td><div class="page-sev">${sevHtml}</div></td>
     </tr>`;
   }).join('');
+  const cssNote = hasCss
+    ? '<div class="pages-panel-note">CSS issues belong to a stylesheet, not a specific page, so they aren\'t counted above — use the CSS filter to see them all.</div>'
+    : '';
   panel.innerHTML = `<div class="pages-panel">
     <table>
       <thead><tr><th>URL (${pages.length})</th><th>Findings</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
+    ${cssNote}
   </div>`;
 }
 
-function setUrlFilter(url, jobId, panelId) {
-  activeUrlFilter = activeUrlFilter === url ? null : url;
-  // Refresh panel to update active row
-  loadPagesPanel(jobId, panelId);
-  applyFilters();
-  // Show/hide url filter bar
-  const bar = document.querySelector('.url-filter-bar');
-  if (bar) bar.remove();
-  if (activeUrlFilter) {
-    const barHtml = document.createElement('div');
-    barHtml.className = 'url-filter-bar';
-    barHtml.innerHTML = `Showing findings for: <strong>${escapeHtml(activeUrlFilter)}</strong>
-      <button class="url-filter-clear" onclick="clearUrlFilter()">Show all pages</button>`;
-    const table = document.querySelector('tbody')?.closest('table');
-    if (table) table.before(barHtml);
-  }
+function setUrlFilter(url) {
+  const wasActive = activeUrlFilter === url;
+  activeUrlFilter = wasActive ? null : url;
+  // Selecting a URL always lands on the occurrence view — it's the most
+  // direct way to see exactly what's on that page. The user can still
+  // switch to "By issue" afterwards; the filter carries over either way.
+  if (!wasActive) viewMode = 'occurrence';
+  // Close the panel on every click here (select or clear) — leaving it open
+  // hid the actual effect of the click (the chip + filtered results appear
+  // below it, off-screen or easy to miss), making it look like nothing
+  // happened. The chip's own × is how the filter gets cleared afterwards.
+  pagesVisible = false;
+  if (lastJob) renderResults(lastJob);
 }
 
 function clearUrlFilter() {
   activeUrlFilter = null;
-  document.querySelector('.url-filter-bar')?.remove();
-  document.querySelectorAll('.pages-panel tr[data-url]').forEach(r => r.classList.remove('active'));
-  applyFilters();
+  if (lastJob) renderResults(lastJob);
 }
 
 function typeGroup(type) {
@@ -524,6 +569,10 @@ function setTypeFilter(type) {
   applyFilters();
   updateSummaryCounts();
   updateLocationColumnVisibility();
+  if (viewMode === 'group' && currentJobId) {
+    GroupsView.render(document.getElementById('groupsArea'), currentJobId,
+      { type: activeTypes, severities: activeFilters, url: activeUrlFilter }, writeSummaryCounts);
+  }
 }
 
 // Location only has meaningful content for accessibility findings (see
@@ -538,16 +587,31 @@ function updateLocationColumnVisibility() {
 // rows currently in the DOM, scoped to the active type filter — the severity
 // toggle (activeFilters) is a display lens on top of these numbers, not a
 // second filter that should shrink them, so it's deliberately not consulted here.
-function updateSummaryCounts() {
-  const counts = { critical: 0, serious: 0, moderate: 0, minor: 0 };
-  document.querySelectorAll('tbody tr[data-impact]').forEach((row) => {
-    const typeMatch = activeTypes === 'all' || row.dataset.type === activeTypes;
-    if (typeMatch && counts[row.dataset.impact] !== undefined) counts[row.dataset.impact]++;
-  });
+// Writes severity counts onto the summary cards. Shared by the occurrence
+// view's own tally (updateSummaryCounts, below) and the grouped view's
+// onCounts callback (see the GroupsView.render calls) — both produce the
+// same { critical, serious, moderate, minor } shape.
+function writeSummaryCounts(counts) {
   ['critical', 'serious', 'moderate', 'minor'].forEach((i) => {
     const el = document.querySelector(`.summary-card[data-filter="${i}"] .num`);
     if (el) el.textContent = counts[i] || 0;
   });
+}
+
+// Recomputed from the underlying findings (rather than counting DOM rows)
+// so it stays correct regardless of DOM state. Only meaningful for the
+// occurrence view — "By issue" means counting groups, not findings, so the
+// grouped view gets its counts from GroupsView.render's onCounts callback
+// instead (see setTypeFilter/toggleFilter/renderResults).
+function updateSummaryCounts() {
+  if (!lastJob || viewMode !== 'occurrence') return;
+  const counts = { critical: 0, serious: 0, moderate: 0, minor: 0 };
+  lastJob.findings.forEach((f) => {
+    const typeMatch = activeTypes === 'all' || typeGroup(f.type) === activeTypes;
+    const urlMatch  = !activeUrlFilter || f.url === activeUrlFilter;
+    if (typeMatch && urlMatch && counts[f.impact] !== undefined) counts[f.impact]++;
+  });
+  writeSummaryCounts(counts);
 }
 
 
@@ -573,6 +637,10 @@ function toggleFilter(impact) {
   }
   syncFilterUI();
   applyFilters();
+  if (viewMode === 'group' && currentJobId) {
+    GroupsView.render(document.getElementById('groupsArea'), currentJobId,
+      { type: activeTypes, severities: activeFilters, url: activeUrlFilter }, writeSummaryCounts);
+  }
 }
 
 function syncFilterUI() {
@@ -582,12 +650,22 @@ function syncFilterUI() {
 }
 
 function applyFilters() {
+  let anyVisible = false;
   document.querySelectorAll('tbody tr[data-impact]').forEach((row) => {
     const impactMatch = activeFilters.has(row.dataset.impact);
     const typeMatch   = activeTypes === 'all' || row.dataset.type === activeTypes;
     const urlMatch    = !activeUrlFilter || row.dataset.url === activeUrlFilter;
-    row.style.display = (impactMatch && typeMatch && urlMatch) ? '' : 'none';
+    const show = impactMatch && typeMatch && urlMatch;
+    row.style.display = show ? '' : 'none';
+    if (show) anyVisible = true;
   });
+  // Combined type/severity/URL filters can exclude every row even though
+  // the scan has findings overall — show an explicit empty state instead
+  // of a table with just a header and nothing underneath it.
+  const table = document.getElementById('findingsTable');
+  const emptyState = document.getElementById('occurrenceEmptyState');
+  if (table) table.style.display = anyVisible ? '' : 'none';
+  if (emptyState) emptyState.style.display = anyVisible ? 'none' : '';
 }
 
 function truncateSeg(seg, max = 22) {

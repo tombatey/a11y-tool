@@ -1,0 +1,186 @@
+/**
+ * Shared "grouped issues" view — loaded by both index.html (live scan) and
+ * history.html (scan detail). Fetches /api/scan/:id/groups and renders it
+ * as an alternative to the flat, one-row-per-occurrence findings table.
+ *
+ * Deliberately self-contained (no reliance on host-page globals) since
+ * index.html/app.js and history.html each keep their own copies of state
+ * like currentJobId/activeTypes under different names.
+ */
+window.GroupsView = (function () {
+  const IMPACT_LABEL = { critical: 'Critical', serious: 'Serious', moderate: 'Moderate', minor: 'Minor' };
+  const TYPE_LABEL   = { accessibility: 'A11Y', 'html-validation': 'HTML', 'css-validation': 'CSS', 'css-lint': 'CSS' };
+
+  // Mirrors the host pages' WCAG_TAG_LABELS/findingTagPills — kept as its
+  // own copy for the same reason as typeCategory() below (this module stays
+  // usable without depending on host-page globals). Empty for HTML/CSS
+  // groups, since only axe-core findings carry wcag_tags.
+  const WCAG_TAG_LABELS = {
+    wcag2a:          'WCAG 2.0 A',
+    wcag2aa:         'WCAG 2.0 AA',
+    wcag21aa:        'WCAG 2.1 AA',
+    wcag22aa:        'WCAG 2.2 AA',
+    wcag2aaa:        'WCAG 2.0 AAA',
+    'best-practice': 'Best Practice',
+    experimental:    'Experimental',
+  };
+
+  function escapeHtml(str) {
+    if (str === undefined || str === null) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+  }
+
+  // Renders the "By occurrence" / "By issue" toggle. `toggleFnName` is the
+  // name of a global function on the host page taking the new mode string —
+  // kept as a string (rather than a function reference) since the buttons
+  // are rendered as an HTML string with inline onclick handlers, matching
+  // the existing type-filter-btn pattern already used on both host pages.
+  //
+  // Uses its own view-toggle/view-toggle-btn classes rather than reusing
+  // type-filters/type-filter-btn — the host pages' setTypeFilter() does a
+  // document-wide querySelectorAll('.type-filter-btn') to sync the active
+  // class on the A11Y/HTML/CSS buttons, which would otherwise also match
+  // (and incorrectly clear the active state of) these toggle buttons.
+  function renderToggle(viewMode, toggleFnName) {
+    return `
+    <div class="view-toggle">
+      <button class="view-toggle-btn ${viewMode === 'occurrence' ? 'active' : ''}" onclick="${toggleFnName}('occurrence')">By occurrence</button>
+      <button class="view-toggle-btn ${viewMode === 'group' ? 'active' : ''}" onclick="${toggleFnName}('group')">By issue</button>
+    </div>`;
+  }
+
+  // Mirrors the host pages' typeGroup() bucketing (accessibility / html-validation
+  // / css) so the type filter buttons can filter grouped issues too. Kept as its
+  // own copy rather than calling the host's global — this module stays usable
+  // without depending on exactly how each host page names that helper.
+  function typeCategory(type) {
+    if (!type || type === 'accessibility') return 'accessibility';
+    if (type === 'html-validation') return 'html-validation';
+    return 'css';
+  }
+
+  function occurrenceLocation(o) {
+    if (o.failure_summary) return escapeHtml(o.failure_summary);
+    const path = (o.breadcrumb || []).slice(-3).join(' > ') || o.target_selector;
+    return path ? escapeHtml(path) : '';
+  }
+
+  function groupTagPills(g) {
+    if (!g.wcag_tags || !g.wcag_tags.length) return '';
+    const known = g.wcag_tags.filter((t) => WCAG_TAG_LABELS[t]);
+    if (!known.length) return '';
+    return `<div class="group-tags">${known.map((t) =>
+      `<span class="finding-tag-pill">${escapeHtml(WCAG_TAG_LABELS[t])}</span>`
+    ).join('')}</div>`;
+  }
+
+  // `urlFilter`, if given, narrows a group's own occurrence list (and the
+  // "N occurrences across M URLs" summary) down to just that URL — mirroring
+  // how the flat occurrence table hides non-matching rows outright, rather
+  // than leaving the group's header showing scan-wide totals while only
+  // some of its occurrences are actually shown underneath.
+  function renderGroup(g, idx, urlFilter) {
+    const occurrences = urlFilter ? g.occurrences.filter((o) => o.url === urlFilter) : g.occurrences;
+    const occurrenceCount = urlFilter ? occurrences.length : g.occurrence_count;
+    const urlCount = urlFilter ? 1 : g.url_count;
+    const bodyId = `groupBody-${idx}`;
+    const occurrenceRows = occurrences.map((o) => `
+      <tr>
+        <td class="occ-url">${escapeHtml(o.url)}</td>
+        <td class="occ-location">${occurrenceLocation(o)}</td>
+        <td class="occ-snippet">${o.html_snippet ? `<code>${escapeHtml(o.html_snippet)}</code>` : ''}</td>
+      </tr>`).join('');
+
+    return `
+    <div class="group-card">
+      <div class="group-card-header" onclick="GroupsView._toggleBody('${bodyId}')">
+        <span class="badge ${g.impact || ''}">${IMPACT_LABEL[g.impact] || 'n/a'}</span>
+        <span class="type-badge ${g.type}">${TYPE_LABEL[g.type] || g.type}</span>
+        <span class="group-title">${escapeHtml(g.title)}</span>
+        ${g.rule_id ? `<span class="group-rule">${escapeHtml(g.rule_id)}</span>` : ''}
+        <span class="group-summary">${occurrenceCount} occurrence${occurrenceCount === 1 ? '' : 's'} across ${urlCount} URL${urlCount === 1 ? '' : 's'}</span>
+        ${groupTagPills(g)}
+      </div>
+      <div class="group-card-body" id="${bodyId}" style="display:none">
+        ${g.help_url ? `<div class="group-help"><a href="${escapeHtml(g.help_url)}" target="_blank" rel="noopener">Details</a></div>` : ''}
+        <table>
+          <thead><tr><th>URL</th><th>Location</th><th>Snippet</th></tr></thead>
+          <tbody>${occurrenceRows}</tbody>
+        </table>
+      </div>
+    </div>`;
+  }
+
+  function _toggleBody(id) {
+    const el = document.getElementById(id);
+    if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
+  }
+
+  // `filters` mirrors the host page's current filter state:
+  //   - type: 'all' | 'accessibility' | 'html-validation' | 'css' — so
+  //     switching to "By issue" while a type filter is active shows only
+  //     that type's groups, and clicking a type filter while already on
+  //     "By issue" re-filters in place.
+  //   - severities: a Set of impact strings ('critical' | 'serious' |
+  //     'moderate' | 'minor'), mirroring the severity-isolation state
+  //     (clicking a severity summary card) — groups whose impact isn't in
+  //     the set are hidden. Omit/null to show every severity.
+  //   - url: a single URL string, mirroring the "Show pages scanned" URL
+  //     filter — only groups with at least one occurrence on that URL are
+  //     shown, and each shown group's own occurrence list/summary is
+  //     narrowed to just that URL too (see renderGroup). Omit/null to show
+  //     every URL.
+  //
+  // `onCounts`, if given, is called with { critical, serious, moderate,
+  // minor } — the number of *groups* (not occurrences) at each severity
+  // among the type+URL-filtered set, before severity filtering is applied —
+  // so the host page can show issue-level counts on its severity summary
+  // cards instead of occurrence-level ones while "By issue" is active.
+  // Mirrors how the occurrence view's own counts are type/URL-filtered but
+  // not further narrowed by which severity is currently isolated.
+  async function render(containerEl, scanId, filters, onCounts) {
+    if (!containerEl) return;
+    const { type: activeType, severities: activeSeverities, url: urlFilter } = filters || {};
+    containerEl.innerHTML = '<div class="empty">Loading grouped issues…</div>';
+    let data;
+    try {
+      const res = await fetch(`/api/scan/${scanId}/groups`);
+      if (!res.ok) throw new Error('bad response');
+      data = await res.json();
+    } catch {
+      containerEl.innerHTML = '<div class="empty">Failed to load grouped issues.</div>';
+      return;
+    }
+
+    const typeFiltered = (!activeType || activeType === 'all')
+      ? data.groups
+      : data.groups.filter((g) => typeCategory(g.type) === activeType);
+
+    const urlFiltered = urlFilter
+      ? typeFiltered.filter((g) => g.urls.includes(urlFilter))
+      : typeFiltered;
+
+    if (onCounts) {
+      const counts = { critical: 0, serious: 0, moderate: 0, minor: 0 };
+      urlFiltered.forEach((g) => { if (counts[g.impact] !== undefined) counts[g.impact]++; });
+      onCounts(counts);
+    }
+
+    const groups = activeSeverities
+      ? urlFiltered.filter((g) => activeSeverities.has(g.impact))
+      : urlFiltered;
+
+    if (data.groups.length === 0) {
+      containerEl.innerHTML = '<div class="empty">No issues to group.</div>';
+    } else if (groups.length === 0) {
+      containerEl.innerHTML = '<div class="empty">No issues match this filter.</div>';
+    } else {
+      containerEl.innerHTML = groups.map((g, idx) => renderGroup(g, idx, urlFilter)).join('');
+    }
+  }
+
+  return { renderToggle, render, _toggleBody };
+})();

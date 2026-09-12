@@ -122,6 +122,30 @@
   }
   .type-filter-btn.active { border-color: var(--ink); color: var(--ink); font-weight: 500; background: var(--paper); }
 
+  .view-toggle { display: flex; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; }
+  .view-toggle-btn {
+    padding: 4px 12px; border: 1px solid var(--line); border-radius: 99px;
+    background: #fff; cursor: pointer; font-size: 12px; color: var(--muted);
+    font-family: inherit;
+  }
+  .view-toggle-btn.active { border-color: var(--ink); color: var(--ink); font-weight: 500; background: var(--paper); }
+
+  .group-card { border: 1px solid var(--line); border-radius: 8px; margin-bottom: 10px; overflow: hidden; }
+  .group-card-header { display: flex; align-items: center; gap: 8px; padding: 10px 12px; cursor: pointer; flex-wrap: wrap; }
+  .group-card-header:hover { background: var(--paper); }
+  .group-title { font-size: 13px; font-weight: 500; }
+  .group-rule { font-size: 11px; color: var(--muted); font-family: ui-monospace, SFMono-Regular, monospace; }
+  .group-summary { margin-left: auto; font-size: 11px; color: var(--muted); white-space: nowrap; }
+  .group-tags { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 4px; }
+  .group-card-body { border-top: 1px solid var(--line); padding: 4px 12px 10px; }
+  .group-help { padding: 8px 0 0; font-size: 12px; }
+  .group-card-body table { margin-top: 6px; table-layout: fixed; }
+  .group-card-body td { word-break: break-word; }
+  .group-card-body .occ-url { width: 32%; color: #017CA1; }
+  .group-card-body .occ-location { width: 18%; }
+  .group-card-body .occ-snippet { width: 50%; }
+  .group-card-body code { font-size: 11px; background: var(--paper); padding: 1px 4px; border-radius: 3px; word-break: break-all; white-space: pre-wrap; }
+
   .finding-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
   .finding-tag-pill {
     font-size: 10px; font-weight: 500; padding: 1px 7px; border-radius: 99px;
@@ -161,6 +185,7 @@
   .pages-panel tr.active td { background: #f0f5f3; }
   .pages-panel tr[data-url] { cursor: pointer; }
   .pages-panel tr[data-url]:hover td { background: #f7f7f5; }
+  .pages-panel-note { padding: 8px 12px; font-size: 11px; color: var(--muted); border-top: 1px solid var(--line); }
   .page-url { color: #017CA1; word-break: break-all; max-width: 500px; }
   .page-sev { display: flex; gap: 8px; white-space: nowrap; }
   .page-sev .ps { font-size: 11px; font-weight: 600; }
@@ -169,9 +194,19 @@
   .page-sev .ps.moderate { color: var(--moderate); }
   .page-sev .ps.minor    { color: var(--minor); }
   .page-sev .ps.none     { color: var(--line); }
-  .url-filter-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 12px; color: var(--muted); padding: 6px 10px; background: #f0f5f3; border-radius: 6px; }
-  .url-filter-bar strong { color: var(--accent); word-break: break-all; }
-  .url-filter-clear { margin-left: auto; background: none; border: none; cursor: pointer; font-size: 11px; color: var(--muted); text-decoration: underline; }
+  .url-filter-chip-row { margin-bottom: 12px; }
+  .url-filter-chip {
+    display: inline-flex; align-items: center; gap: 6px; max-width: 100%;
+    background: var(--paper); border: 1px solid var(--line); border-radius: 99px;
+    padding: 4px 6px 4px 12px; font-size: 12px; color: var(--ink);
+  }
+  .url-filter-chip-text { word-break: break-all; }
+  .url-filter-chip-close {
+    flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center;
+    width: 18px; height: 18px; border-radius: 50%; border: none; padding: 0;
+    background: var(--line); color: var(--ink); cursor: pointer; font-size: 13px; line-height: 1;
+  }
+  .url-filter-chip-close:hover { background: var(--critical); color: #fff; }
   .export-bar { display: flex; gap: 8px; margin-bottom: 16px; }
   .export-btn { display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px; border: 1px solid var(--border); border-radius: 6px; background: #fff; cursor: pointer; font-size: 12px; color: var(--text-secondary); font-family: inherit; text-decoration: none; }
   .export-btn:hover { border-color: var(--text-accent); color: var(--text-accent); }
@@ -238,6 +273,8 @@
 <script>
 let activeFilters = new Set(['critical', 'serious', 'moderate', 'minor']);
 let activeTypes   = 'all'; // 'all' | 'accessibility' | 'html-validation' | 'css'
+let viewMode      = 'occurrence'; // 'occurrence' = flat table, 'group' = grouped by issue
+let lastDetailJob = null; // most recently rendered job, so setViewMode can re-render without refetching
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 fetch('/api/me')
@@ -310,6 +347,8 @@ async function loadList() {
 async function viewScan(id) {
   activeFilters = new Set(['critical', 'serious', 'moderate', 'minor']);
   activeTypes   = 'all';
+  viewMode      = 'occurrence';
+  hUrlFilter    = null;
   document.getElementById('listView').style.display = 'none';
   document.getElementById('detailView').style.display = 'block';
   document.getElementById('scanMeta').innerHTML = '';
@@ -318,8 +357,14 @@ async function viewScan(id) {
   history.replaceState(null, '', `?id=${id}`);
 
   const job = await fetch(`/api/scan/${id}`).then(r => r.json());
+  lastDetailJob = job;
   renderMeta(job);
   renderResults(job);
+}
+
+function setViewMode(mode) {
+  viewMode = mode;
+  if (lastDetailJob) renderResults(lastDetailJob);
 }
 
 function backToList() {
@@ -420,6 +465,8 @@ function renderResults(job) {
       ).join('')}
     </div>` : '';
 
+  const viewToggleHtml = GroupsView.renderToggle(viewMode, 'setViewMode');
+
   const summaryHtml = `
     <div class="summary-grid">
       <div class="summary-card"><div class="num">${job.pagesScanned}</div><div class="label">Pages scanned</div></div>
@@ -456,24 +503,49 @@ function renderResults(job) {
       </a>
     </div>` : '';
 
+  // Shown above the results regardless of view mode — clicking a page in
+  // "Show pages scanned" sets this filter (see setHUrlFilter) and it
+  // applies to both the flat table and the grouped view.
+  const urlFilterChipHtml = hUrlFilter ? `
+    <div class="url-filter-chip-row">
+      <span class="url-filter-chip">
+        <span class="url-filter-chip-text">${escHtml(hUrlFilter)}</span>
+        <button class="url-filter-chip-close" onclick="clearHUrlFilter()" aria-label="Clear URL filter" title="Clear URL filter">&times;</button>
+      </span>
+    </div>` : '';
+
   el.innerHTML = `
     ${typeFilterHtml}
+    ${viewToggleHtml}
     ${summaryHtml}
     ${exportBar}
     <div class="pages-toggle">
       <span></span>
-      <button class="pages-toggle-btn" id="pagesToggleBtn" onclick="togglePagesPanelH('${scanId || ''}')">Show pages scanned</button>
+      <button class="pages-toggle-btn" id="pagesToggleBtn" onclick="togglePagesPanelH('${scanId || ''}')">
+        ${hPagesVisible ? 'Hide pages' : 'Show pages scanned'}
+      </button>
     </div>
-    <div id="pagesPanelH" style="display:none"></div>
-    ${findingsEmpty ? emptyFindingsMessage : `
-    <table>
+    <div id="pagesPanelH" style="display:${hPagesVisible ? 'block' : 'none'}"></div>
+    ${urlFilterChipHtml}
+    ${viewMode === 'group'
+      ? (findingsEmpty ? emptyFindingsMessage : '<div id="groupsArea"></div>')
+      : (findingsEmpty ? emptyFindingsMessage : `
+    <table id="findingsTable">
       <thead><tr><th>Impact</th><th>Rule</th><th>URL</th><th class="location-header">Location</th><th>Issue</th></tr></thead>
       <tbody>${rows}</tbody>
-    </table>`}`;
+    </table>
+    <div id="occurrenceEmptyState" class="empty" style="display:none">No findings match the current filters.</div>`)}`;
+
+  if (viewMode === 'group' && !findingsEmpty && scanId) {
+    GroupsView.render(document.getElementById('groupsArea'), scanId,
+      { type: activeTypes, severities: activeFilters, url: hUrlFilter }, writeSummaryCounts);
+  }
 
   syncFilterUI();
   applyFilters();
+  updateSummaryCounts();
   updateLocationColumnVisibility();
+  if (hPagesVisible && scanId) loadPagesPanelH(scanId);
 }
 
 let hPagesVisible = false;
@@ -489,52 +561,78 @@ async function togglePagesPanelH(jobId) {
   if (hPagesVisible && jobId) await loadPagesPanelH(jobId);
 }
 
+// CSS findings are attributed to their own stylesheet's URL (a page's
+// external/inline stylesheet resource), not the page(s) that reference
+// it — so they can never match a page's own URL. Recomputing counts here
+// from the findings actually on the page (same url === url match the URL
+// filter itself uses), rather than trusting the scan-time pre-aggregated
+// pages.findings_count/severity counts from the API, keeps this panel
+// exactly consistent with what clicking a row then filters to — a CSS-only
+// page will honestly show "No findings" here even though it has CSS issues
+// (visible via the CSS type filter, just not attributable to one page).
+function pageCountsFromFindings(findings, url) {
+  const counts = { critical_count: 0, serious_count: 0, moderate_count: 0, minor_count: 0, findings_count: 0 };
+  findings.forEach(f => {
+    if (f.url !== url) return;
+    counts.findings_count++;
+    const key = `${f.impact}_count`;
+    if (counts[key] !== undefined) counts[key]++;
+  });
+  return counts;
+}
+
 async function loadPagesPanelH(jobId) {
   const panel = document.getElementById('pagesPanelH');
   if (!panel) return;
   panel.innerHTML = '<div class="empty" style="padding:12px">Loading pages…</div>';
   const pages = await fetch(`/api/scan/${jobId}/pages`).then(r => r.json()).catch(() => []);
   if (!pages.length) { panel.innerHTML = '<div class="empty" style="padding:12px">No pages recorded.</div>'; return; }
+  const findings = lastDetailJob?.findings || [];
+  const hasCss = findings.some(f => typeGroup(f.type) === 'css');
   const rows = pages.map(p => {
-    const sevHtml = p.findings_count === 0
+    const sc = pageCountsFromFindings(findings, p.url);
+    const sevHtml = sc.findings_count === 0
       ? '<span class="ps none">No findings</span>'
       : [
-          p.critical_count ? `<span class="ps critical">● ${p.critical_count} critical</span>` : '',
-          p.serious_count  ? `<span class="ps serious">● ${p.serious_count} serious</span>`   : '',
-          p.moderate_count ? `<span class="ps moderate">● ${p.moderate_count} moderate</span>` : '',
-          p.minor_count    ? `<span class="ps minor">● ${p.minor_count} minor</span>`          : '',
+          sc.critical_count ? `<span class="ps critical">● ${sc.critical_count} critical</span>` : '',
+          sc.serious_count  ? `<span class="ps serious">● ${sc.serious_count} serious</span>`   : '',
+          sc.moderate_count ? `<span class="ps moderate">● ${sc.moderate_count} moderate</span>` : '',
+          sc.minor_count    ? `<span class="ps minor">● ${sc.minor_count} minor</span>`          : '',
         ].filter(Boolean).join('');
     const isActive = hUrlFilter === p.url;
-    return `<tr data-url="${escHtml(p.url)}" class="${isActive ? 'active' : ''}" onclick="setHUrlFilter('${escHtml(p.url)}', '${jobId}')">
+    return `<tr data-url="${escHtml(p.url)}" class="${isActive ? 'active' : ''}" onclick="setHUrlFilter('${escHtml(p.url)}')">
       <td class="page-url">${escHtml(p.url)}</td>
       <td><div class="page-sev">${sevHtml}</div></td>
     </tr>`;
   }).join('');
+  const cssNote = hasCss
+    ? '<div class="pages-panel-note">CSS issues belong to a stylesheet, not a specific page, so they aren\'t counted above — use the CSS filter to see them all.</div>'
+    : '';
   panel.innerHTML = `<div class="pages-panel"><table>
     <thead><tr><th>URL (${pages.length})</th><th>Findings</th></tr></thead>
     <tbody>${rows}</tbody>
-  </table></div>`;
+  </table>
+  ${cssNote}</div>`;
 }
 
-function setHUrlFilter(url, jobId) {
-  hUrlFilter = hUrlFilter === url ? null : url;
-  loadPagesPanelH(jobId);
-  applyFilters();
-  document.querySelector('.url-filter-bar')?.remove();
-  if (hUrlFilter) {
-    const bar = document.createElement('div');
-    bar.className = 'url-filter-bar';
-    bar.innerHTML = `Showing findings for: <strong>${escHtml(hUrlFilter)}</strong>
-      <button class="url-filter-clear" onclick="clearHUrlFilter()">Show all pages</button>`;
-    document.querySelector('tbody')?.closest('table')?.before(bar);
-  }
+function setHUrlFilter(url) {
+  const wasActive = hUrlFilter === url;
+  hUrlFilter = wasActive ? null : url;
+  // Selecting a URL always lands on the occurrence view — it's the most
+  // direct way to see exactly what's on that page. The user can still
+  // switch to "By issue" afterwards; the filter carries over either way.
+  if (!wasActive) viewMode = 'occurrence';
+  // Close the panel on every click here (select or clear) — leaving it open
+  // hid the actual effect of the click (the chip + filtered results appear
+  // below it, off-screen or easy to miss), making it look like nothing
+  // happened. The chip's own × is how the filter gets cleared afterwards.
+  hPagesVisible = false;
+  if (lastDetailJob) renderResults(lastDetailJob);
 }
 
 function clearHUrlFilter() {
   hUrlFilter = null;
-  document.querySelector('.url-filter-bar')?.remove();
-  document.querySelectorAll('.pages-panel tr[data-url]').forEach(r => r.classList.remove('active'));
-  applyFilters();
+  if (lastDetailJob) renderResults(lastDetailJob);
 }
 
 // ── Filters ───────────────────────────────────────────────────────────────────
@@ -554,6 +652,11 @@ function toggleFilter(impact) {
   }
   syncFilterUI();
   applyFilters();
+  if (viewMode === 'group') {
+    const scanId = new URLSearchParams(window.location.search).get('id');
+    if (scanId) GroupsView.render(document.getElementById('groupsArea'), scanId,
+      { type: activeTypes, severities: activeFilters, url: hUrlFilter }, writeSummaryCounts);
+  }
 }
 
 function syncFilterUI() {
@@ -563,12 +666,22 @@ function syncFilterUI() {
 }
 
 function applyFilters() {
+  let anyVisible = false;
   document.querySelectorAll('tbody tr[data-impact]').forEach(row => {
     const impactMatch = activeFilters.has(row.dataset.impact);
     const typeMatch   = activeTypes === 'all' || row.dataset.type === activeTypes;
     const urlMatch    = !hUrlFilter || row.dataset.url === hUrlFilter;
-    row.style.display = (impactMatch && typeMatch && urlMatch) ? '' : 'none';
+    const show = impactMatch && typeMatch && urlMatch;
+    row.style.display = show ? '' : 'none';
+    if (show) anyVisible = true;
   });
+  // Combined type/severity/URL filters can exclude every row even though
+  // the scan has findings overall — show an explicit empty state instead
+  // of a table with just a header and nothing underneath it.
+  const table = document.getElementById('findingsTable');
+  const emptyState = document.getElementById('occurrenceEmptyState');
+  if (table) table.style.display = anyVisible ? '' : 'none';
+  if (emptyState) emptyState.style.display = anyVisible ? 'none' : '';
 }
 
 // ── Type filter (All/Accessibility/HTML/CSS) ────────────────────────────────────
@@ -591,6 +704,11 @@ function setTypeFilter(type) {
   applyFilters();
   updateSummaryCounts();
   updateLocationColumnVisibility();
+  if (viewMode === 'group') {
+    const scanId = new URLSearchParams(window.location.search).get('id');
+    if (scanId) GroupsView.render(document.getElementById('groupsArea'), scanId,
+      { type: activeTypes, severities: activeFilters, url: hUrlFilter }, writeSummaryCounts);
+  }
 }
 
 // Location only has meaningful content for accessibility findings (see
@@ -603,18 +721,31 @@ function updateLocationColumnVisibility() {
   );
 }
 
-// Recomputes the Critical/Serious/Moderate/Minor summary numbers from the rows
-// currently in the DOM, scoped to the active type filter — mirrors app.js.
-function updateSummaryCounts() {
-  const counts = { critical: 0, serious: 0, moderate: 0, minor: 0 };
-  document.querySelectorAll('tbody tr[data-impact]').forEach(row => {
-    const typeMatch = activeTypes === 'all' || row.dataset.type === activeTypes;
-    if (typeMatch && counts[row.dataset.impact] !== undefined) counts[row.dataset.impact]++;
-  });
+// Writes severity counts onto the summary cards. Shared by the occurrence
+// view's own tally (updateSummaryCounts, below) and the grouped view's
+// onCounts callback (see the GroupsView.render calls) — both produce the
+// same { critical, serious, moderate, minor } shape.
+function writeSummaryCounts(counts) {
   ['critical', 'serious', 'moderate', 'minor'].forEach(i => {
     const el = document.querySelector(`.summary-card[data-filter="${i}"] .num`);
     if (el) el.textContent = counts[i] || 0;
   });
+}
+
+// Recomputed from the underlying findings (rather than counting DOM rows)
+// so it stays correct regardless of DOM state. Only meaningful for the
+// occurrence view — "By issue" means counting groups, not findings, so the
+// grouped view gets its counts from GroupsView.render's onCounts callback
+// instead (see setTypeFilter/toggleFilter/renderResults).
+function updateSummaryCounts() {
+  if (!lastDetailJob || viewMode !== 'occurrence') return;
+  const counts = { critical: 0, serious: 0, moderate: 0, minor: 0 };
+  (lastDetailJob.findings || []).forEach(f => {
+    const typeMatch = activeTypes === 'all' || typeGroup(f.type) === activeTypes;
+    const urlMatch  = !hUrlFilter || f.url === hUrlFilter;
+    if (typeMatch && urlMatch && counts[f.impact] !== undefined) counts[f.impact]++;
+  });
+  writeSummaryCounts(counts);
 }
 
 // ── Per-finding WCAG/category tags ───────────────────────────────────────────────
@@ -705,6 +836,7 @@ function formatDate(iso) {
   <a id="versionLink" href="/changelog">v…</a>
   <span>© 2026 WebDepend Ltd.</span>
 </footer>
+<script src="groupsView.js"></script>
 <script src="version-footer.js"></script>
 </body>
 </html>
