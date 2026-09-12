@@ -422,10 +422,11 @@ function renderResults(job) {
     ${viewMode === 'group'
       ? (findingsEmpty ? emptyFindingsMessage : '<div id="groupsArea"></div>')
       : (findingsEmpty ? emptyFindingsMessage : `
-    <table>
+    <table id="findingsTable">
       <thead><tr><th>Impact</th><th>Rule</th><th>URL</th><th class="location-header">Location</th><th>Issue</th></tr></thead>
       <tbody>${rows}</tbody>
-    </table>`)}`;
+    </table>
+    <div id="occurrenceEmptyState" class="empty" style="display:none">No findings match the current filters.</div>`)}`;
 
   syncFilterUI();
   applyFilters();
@@ -448,6 +449,26 @@ async function togglePagesPanel(jobId) {
   if (pagesVisible && jobId) await loadPagesPanel(jobId, 'pagesPanel');
 }
 
+// CSS findings are attributed to their own stylesheet's URL (a page's
+// external/inline stylesheet resource), not the page(s) that reference
+// it — so they can never match a page's own URL. Recomputing counts here
+// from the findings actually on the page (same url === url match the URL
+// filter itself uses), rather than trusting the scan-time pre-aggregated
+// pages.findings_count/severity counts from the API, keeps this panel
+// exactly consistent with what clicking a row then filters to — a CSS-only
+// page will honestly show "No findings" here even though it has CSS issues
+// (visible via the CSS type filter, just not attributable to one page).
+function pageCountsFromFindings(findings, url) {
+  const counts = { critical_count: 0, serious_count: 0, moderate_count: 0, minor_count: 0, findings_count: 0 };
+  findings.forEach((f) => {
+    if (f.url !== url) return;
+    counts.findings_count++;
+    const key = `${f.impact}_count`;
+    if (counts[key] !== undefined) counts[key]++;
+  });
+  return counts;
+}
+
 async function loadPagesPanel(jobId, panelId) {
   const panel = document.getElementById(panelId);
   if (!panel) return;
@@ -457,8 +478,10 @@ async function loadPagesPanel(jobId, panelId) {
     panel.innerHTML = '<div class="empty" style="padding:12px">No pages recorded.</div>';
     return;
   }
+  const findings = lastJob?.findings || [];
+  const hasCss = findings.some((f) => typeGroup(f.type) === 'css');
   const rows = pages.map(p => {
-    const sc = p;
+    const sc = pageCountsFromFindings(findings, p.url);
     const sevHtml = (sc.findings_count === 0)
       ? '<span class="ps none">No findings</span>'
       : [
@@ -473,11 +496,15 @@ async function loadPagesPanel(jobId, panelId) {
       <td><div class="page-sev">${sevHtml}</div></td>
     </tr>`;
   }).join('');
+  const cssNote = hasCss
+    ? '<div class="pages-panel-note">CSS issues belong to a stylesheet, not a specific page, so they aren\'t counted above — use the CSS filter to see them all.</div>'
+    : '';
   panel.innerHTML = `<div class="pages-panel">
     <table>
       <thead><tr><th>URL (${pages.length})</th><th>Findings</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
+    ${cssNote}
   </div>`;
 }
 
@@ -623,12 +650,22 @@ function syncFilterUI() {
 }
 
 function applyFilters() {
+  let anyVisible = false;
   document.querySelectorAll('tbody tr[data-impact]').forEach((row) => {
     const impactMatch = activeFilters.has(row.dataset.impact);
     const typeMatch   = activeTypes === 'all' || row.dataset.type === activeTypes;
     const urlMatch    = !activeUrlFilter || row.dataset.url === activeUrlFilter;
-    row.style.display = (impactMatch && typeMatch && urlMatch) ? '' : 'none';
+    const show = impactMatch && typeMatch && urlMatch;
+    row.style.display = show ? '' : 'none';
+    if (show) anyVisible = true;
   });
+  // Combined type/severity/URL filters can exclude every row even though
+  // the scan has findings overall — show an explicit empty state instead
+  // of a table with just a header and nothing underneath it.
+  const table = document.getElementById('findingsTable');
+  const emptyState = document.getElementById('occurrenceEmptyState');
+  if (table) table.style.display = anyVisible ? '' : 'none';
+  if (emptyState) emptyState.style.display = anyVisible ? 'none' : '';
 }
 
 function truncateSeg(seg, max = 22) {

@@ -184,6 +184,7 @@
   .pages-panel tr.active td { background: #f0f5f3; }
   .pages-panel tr[data-url] { cursor: pointer; }
   .pages-panel tr[data-url]:hover td { background: #f7f7f5; }
+  .pages-panel-note { padding: 8px 12px; font-size: 11px; color: var(--muted); border-top: 1px solid var(--line); }
   .page-url { color: #017CA1; word-break: break-all; max-width: 500px; }
   .page-sev { display: flex; gap: 8px; white-space: nowrap; }
   .page-sev .ps { font-size: 11px; font-weight: 600; }
@@ -528,10 +529,11 @@ function renderResults(job) {
     ${viewMode === 'group'
       ? (findingsEmpty ? emptyFindingsMessage : '<div id="groupsArea"></div>')
       : (findingsEmpty ? emptyFindingsMessage : `
-    <table>
+    <table id="findingsTable">
       <thead><tr><th>Impact</th><th>Rule</th><th>URL</th><th class="location-header">Location</th><th>Issue</th></tr></thead>
       <tbody>${rows}</tbody>
-    </table>`)}`;
+    </table>
+    <div id="occurrenceEmptyState" class="empty" style="display:none">No findings match the current filters.</div>`)}`;
 
   if (viewMode === 'group' && !findingsEmpty && scanId) {
     GroupsView.render(document.getElementById('groupsArea'), scanId,
@@ -558,20 +560,43 @@ async function togglePagesPanelH(jobId) {
   if (hPagesVisible && jobId) await loadPagesPanelH(jobId);
 }
 
+// CSS findings are attributed to their own stylesheet's URL (a page's
+// external/inline stylesheet resource), not the page(s) that reference
+// it — so they can never match a page's own URL. Recomputing counts here
+// from the findings actually on the page (same url === url match the URL
+// filter itself uses), rather than trusting the scan-time pre-aggregated
+// pages.findings_count/severity counts from the API, keeps this panel
+// exactly consistent with what clicking a row then filters to — a CSS-only
+// page will honestly show "No findings" here even though it has CSS issues
+// (visible via the CSS type filter, just not attributable to one page).
+function pageCountsFromFindings(findings, url) {
+  const counts = { critical_count: 0, serious_count: 0, moderate_count: 0, minor_count: 0, findings_count: 0 };
+  findings.forEach(f => {
+    if (f.url !== url) return;
+    counts.findings_count++;
+    const key = `${f.impact}_count`;
+    if (counts[key] !== undefined) counts[key]++;
+  });
+  return counts;
+}
+
 async function loadPagesPanelH(jobId) {
   const panel = document.getElementById('pagesPanelH');
   if (!panel) return;
   panel.innerHTML = '<div class="empty" style="padding:12px">Loading pages…</div>';
   const pages = await fetch(`/api/scan/${jobId}/pages`).then(r => r.json()).catch(() => []);
   if (!pages.length) { panel.innerHTML = '<div class="empty" style="padding:12px">No pages recorded.</div>'; return; }
+  const findings = lastDetailJob?.findings || [];
+  const hasCss = findings.some(f => typeGroup(f.type) === 'css');
   const rows = pages.map(p => {
-    const sevHtml = p.findings_count === 0
+    const sc = pageCountsFromFindings(findings, p.url);
+    const sevHtml = sc.findings_count === 0
       ? '<span class="ps none">No findings</span>'
       : [
-          p.critical_count ? `<span class="ps critical">● ${p.critical_count} critical</span>` : '',
-          p.serious_count  ? `<span class="ps serious">● ${p.serious_count} serious</span>`   : '',
-          p.moderate_count ? `<span class="ps moderate">● ${p.moderate_count} moderate</span>` : '',
-          p.minor_count    ? `<span class="ps minor">● ${p.minor_count} minor</span>`          : '',
+          sc.critical_count ? `<span class="ps critical">● ${sc.critical_count} critical</span>` : '',
+          sc.serious_count  ? `<span class="ps serious">● ${sc.serious_count} serious</span>`   : '',
+          sc.moderate_count ? `<span class="ps moderate">● ${sc.moderate_count} moderate</span>` : '',
+          sc.minor_count    ? `<span class="ps minor">● ${sc.minor_count} minor</span>`          : '',
         ].filter(Boolean).join('');
     const isActive = hUrlFilter === p.url;
     return `<tr data-url="${escHtml(p.url)}" class="${isActive ? 'active' : ''}" onclick="setHUrlFilter('${escHtml(p.url)}')">
@@ -579,10 +604,14 @@ async function loadPagesPanelH(jobId) {
       <td><div class="page-sev">${sevHtml}</div></td>
     </tr>`;
   }).join('');
+  const cssNote = hasCss
+    ? '<div class="pages-panel-note">CSS issues belong to a stylesheet, not a specific page, so they aren\'t counted above — use the CSS filter to see them all.</div>'
+    : '';
   panel.innerHTML = `<div class="pages-panel"><table>
     <thead><tr><th>URL (${pages.length})</th><th>Findings</th></tr></thead>
     <tbody>${rows}</tbody>
-  </table></div>`;
+  </table>
+  ${cssNote}</div>`;
 }
 
 function setHUrlFilter(url) {
@@ -636,12 +665,22 @@ function syncFilterUI() {
 }
 
 function applyFilters() {
+  let anyVisible = false;
   document.querySelectorAll('tbody tr[data-impact]').forEach(row => {
     const impactMatch = activeFilters.has(row.dataset.impact);
     const typeMatch   = activeTypes === 'all' || row.dataset.type === activeTypes;
     const urlMatch    = !hUrlFilter || row.dataset.url === hUrlFilter;
-    row.style.display = (impactMatch && typeMatch && urlMatch) ? '' : 'none';
+    const show = impactMatch && typeMatch && urlMatch;
+    row.style.display = show ? '' : 'none';
+    if (show) anyVisible = true;
   });
+  // Combined type/severity/URL filters can exclude every row even though
+  // the scan has findings overall — show an explicit empty state instead
+  // of a table with just a header and nothing underneath it.
+  const table = document.getElementById('findingsTable');
+  const emptyState = document.getElementById('occurrenceEmptyState');
+  if (table) table.style.display = anyVisible ? '' : 'none';
+  if (emptyState) emptyState.style.display = anyVisible ? 'none' : '';
 }
 
 // ── Type filter (All/Accessibility/HTML/CSS) ────────────────────────────────────
