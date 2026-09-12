@@ -11,6 +11,20 @@ window.GroupsView = (function () {
   const IMPACT_LABEL = { critical: 'Critical', serious: 'Serious', moderate: 'Moderate', minor: 'Minor' };
   const TYPE_LABEL   = { accessibility: 'A11Y', 'html-validation': 'HTML', 'css-validation': 'CSS', 'css-lint': 'CSS' };
 
+  // Mirrors the host pages' WCAG_TAG_LABELS/findingTagPills — kept as its
+  // own copy for the same reason as typeCategory() below (this module stays
+  // usable without depending on host-page globals). Empty for HTML/CSS
+  // groups, since only axe-core findings carry wcag_tags.
+  const WCAG_TAG_LABELS = {
+    wcag2a:          'WCAG 2.0 A',
+    wcag2aa:         'WCAG 2.0 AA',
+    wcag21aa:        'WCAG 2.1 AA',
+    wcag22aa:        'WCAG 2.2 AA',
+    wcag2aaa:        'WCAG 2.0 AAA',
+    'best-practice': 'Best Practice',
+    experimental:    'Experimental',
+  };
+
   function escapeHtml(str) {
     if (str === undefined || str === null) return '';
     return String(str)
@@ -54,6 +68,15 @@ window.GroupsView = (function () {
     return path ? escapeHtml(path) : '';
   }
 
+  function groupTagPills(g) {
+    if (!g.wcag_tags || !g.wcag_tags.length) return '';
+    const known = g.wcag_tags.filter((t) => WCAG_TAG_LABELS[t]);
+    if (!known.length) return '';
+    return `<div class="group-tags">${known.map((t) =>
+      `<span class="finding-tag-pill">${escapeHtml(WCAG_TAG_LABELS[t])}</span>`
+    ).join('')}</div>`;
+  }
+
   // `urlFilter`, if given, narrows a group's own occurrence list (and the
   // "N occurrences across M URLs" summary) down to just that URL — mirroring
   // how the flat occurrence table hides non-matching rows outright, rather
@@ -79,6 +102,7 @@ window.GroupsView = (function () {
         <span class="group-title">${escapeHtml(g.title)}</span>
         ${g.rule_id ? `<span class="group-rule">${escapeHtml(g.rule_id)}</span>` : ''}
         <span class="group-summary">${occurrenceCount} occurrence${occurrenceCount === 1 ? '' : 's'} across ${urlCount} URL${urlCount === 1 ? '' : 's'}</span>
+        ${groupTagPills(g)}
       </div>
       <div class="group-card-body" id="${bodyId}" style="display:none">
         ${g.help_url ? `<div class="group-help"><a href="${escapeHtml(g.help_url)}" target="_blank" rel="noopener">Details</a></div>` : ''}
