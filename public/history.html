@@ -237,6 +237,7 @@
     <a href="/" class="header-link">Scanner</a>
     <a href="/history.html" class="header-link active">History</a>
     <a href="/team.html" class="header-link">Team</a>
+    <a href="/organisations.html" class="header-link">Organisations</a>
     <span id="headerUser" class="header-user"></span>
     <form action="/auth/logout" method="post" style="margin:0">
       <button class="logout-btn" type="submit">Sign out</button>
@@ -365,6 +366,13 @@ async function viewScan(id) {
 function setViewMode(mode) {
   viewMode = mode;
   if (lastDetailJob) renderResults(lastDetailJob);
+}
+
+// Shared by every GroupsView.render() call site — enables the "Raise bug"
+// action only when this scan was started with a Testing Manager
+// organisation/project selected.
+function raiseBugContext(job) {
+  return { organisationId: job?.organisationId ?? null, tmProjectId: job?.tmProjectId ?? null };
 }
 
 function backToList() {
@@ -538,7 +546,7 @@ function renderResults(job) {
 
   if (viewMode === 'group' && !findingsEmpty && scanId) {
     GroupsView.render(document.getElementById('groupsArea'), scanId,
-      { type: activeTypes, severities: activeFilters, url: hUrlFilter }, writeSummaryCounts);
+      { type: activeTypes, severities: activeFilters, url: hUrlFilter, raiseBug: raiseBugContext(job) }, writeSummaryCounts);
   }
 
   syncFilterUI();
@@ -655,7 +663,7 @@ function toggleFilter(impact) {
   if (viewMode === 'group') {
     const scanId = new URLSearchParams(window.location.search).get('id');
     if (scanId) GroupsView.render(document.getElementById('groupsArea'), scanId,
-      { type: activeTypes, severities: activeFilters, url: hUrlFilter }, writeSummaryCounts);
+      { type: activeTypes, severities: activeFilters, url: hUrlFilter, raiseBug: raiseBugContext(lastDetailJob) }, writeSummaryCounts);
   }
 }
 
@@ -707,7 +715,7 @@ function setTypeFilter(type) {
   if (viewMode === 'group') {
     const scanId = new URLSearchParams(window.location.search).get('id');
     if (scanId) GroupsView.render(document.getElementById('groupsArea'), scanId,
-      { type: activeTypes, severities: activeFilters, url: hUrlFilter }, writeSummaryCounts);
+      { type: activeTypes, severities: activeFilters, url: hUrlFilter, raiseBug: raiseBugContext(lastDetailJob) }, writeSummaryCounts);
   }
 }
 

@@ -331,6 +331,7 @@
   <div class="header-right">
     <a href="/history.html" class="header-link">History</a>
     <a href="/team.html" class="header-link">Team</a>
+    <a href="/organisations.html" class="header-link">Organisations</a>
     <span id="headerUser" class="header-user"></span>
     <form action="/auth/logout" method="post" style="margin:0">
       <button class="logout-btn" type="submit">Sign out</button>
@@ -498,6 +499,25 @@
         <span class="tag-desc">slower — recommended for URL list scans</span>
       </label>
     </div>
+
+    <hr class="divider" />
+
+    <div class="tag-section-label">Testing Manager <span style="text-transform:none;">(optional)</span></div>
+    <div class="row">
+      <div>
+        <label for="tmOrganisation">Organisation</label>
+        <select id="tmOrganisation">
+          <option value="">None</option>
+        </select>
+      </div>
+      <div>
+        <label for="tmProject">Project</label>
+        <select id="tmProject" disabled>
+          <option value="">Select an organisation first</option>
+        </select>
+      </div>
+    </div>
+    <div class="field-hint">Findings from this scan can be raised as bugs directly into the selected Testing Manager project.</div>
 
     <button class="primary" id="startBtn">Start scan</button>
 

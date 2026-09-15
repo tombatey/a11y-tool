@@ -48,6 +48,9 @@ function rowToJob(row, findings = [], errors = []) {
     stopRequested:    row.stop_requested,
     createdAt:        row.created_at,
     updatedAt:        row.updated_at,
+    organisationId:   row.organisation_id,
+    tmProjectId:      row.tm_project_id,
+    tmProjectName:    row.tm_project_name,
     findings:         findings.map(rowToFinding),
     errors:           errors.map((e) => ({ url: e.url, error: e.message })),
   };
@@ -81,12 +84,13 @@ function rowToFinding(row) {
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 
-async function createJob(input, startedByEmail = null) {
+async function createJob(input, startedByEmail = null, tm = {}) {
+  const { organisationId = null, tmProjectId = null, tmProjectName = null } = tm;
   const res = await pool.query(
-    `INSERT INTO scans (mode, input, started_by_email)
-     VALUES ($1, $2, $3)
+    `INSERT INTO scans (mode, input, started_by_email, organisation_id, tm_project_id, tm_project_name)
+     VALUES ($1, $2, $3, $4, $5, $6)
      RETURNING *`,
-    [input.mode, JSON.stringify(encryptAuthForStorage(input)), startedByEmail]
+    [input.mode, JSON.stringify(encryptAuthForStorage(input)), startedByEmail, organisationId, tmProjectId, tmProjectName]
   );
   // Build the returned job from the plaintext `input` we were given, not the
   // (now-encrypted) row — the caller (server.js) immediately hands this to
@@ -102,6 +106,9 @@ async function createJob(input, startedByEmail = null) {
     stopRequested:   row.stop_requested,
     createdAt:       row.created_at,
     updatedAt:       row.updated_at,
+    organisationId:  row.organisation_id,
+    tmProjectId:     row.tm_project_id,
+    tmProjectName:   row.tm_project_name,
     findings:        [],
     errors:          [],
   };
@@ -284,6 +291,36 @@ function isStopRequested(id) {
   return stopRequestedSet.has(id);
 }
 
+// Returns bugs already raised for this scan, keyed by group_key — used to
+// annotate the groups response so the UI can show "Raised: BUG-123" and
+// hide the raise-bug action for groups that already have one.
+async function getRaisedBugs(scanId) {
+  const res = await pool.query(
+    `SELECT group_key, tm_issue_id, tm_issue_ref, assigned_to_tm_id, assigned_to_name
+     FROM raised_bugs WHERE scan_id = $1`,
+    [scanId]
+  );
+  const byGroupKey = {};
+  for (const row of res.rows) {
+    byGroupKey[row.group_key] = {
+      tmIssueId:      row.tm_issue_id,
+      tmIssueRef:     row.tm_issue_ref,
+      assignedToTmId: row.assigned_to_tm_id,
+      assignedToName: row.assigned_to_name,
+    };
+  }
+  return byGroupKey;
+}
+
+async function insertRaisedBug({ scanId, groupKey, tmIssueId, tmIssueRef, assignedToTmId, assignedToName, raisedByEmail }) {
+  await pool.query(
+    `INSERT INTO raised_bugs
+       (scan_id, group_key, tm_issue_id, tm_issue_ref, assigned_to_tm_id, assigned_to_name, raised_by_email)
+     VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+    [scanId, groupKey, tmIssueId, tmIssueRef, assignedToTmId, assignedToName, raisedByEmail]
+  );
+}
+
 module.exports = {
   createJob,
   getJob,
@@ -296,4 +333,6 @@ module.exports = {
   getScanEmailData,
   requestStop,
   isStopRequested,
+  getRaisedBugs,
+  insertRaisedBug,
 };

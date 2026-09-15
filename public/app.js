@@ -23,6 +23,51 @@ window.addEventListener('DOMContentLoaded', () => {
   const rescanId = params.get('rescan');
   const forceMode = params.get('mode'); // 'list' = convert crawl to URL list
   if (rescanId) preFillFromScan(rescanId, forceMode);
+  loadOrganisationOptions();
+});
+
+// ─── Testing Manager organisation/project pickers ──────────────────────────────
+const tmOrganisationSelect = document.getElementById('tmOrganisation');
+const tmProjectSelect      = document.getElementById('tmProject');
+
+async function loadOrganisationOptions() {
+  let orgs = [];
+  try {
+    orgs = await fetch('/api/organisations').then(r => r.json());
+  } catch {
+    return;
+  }
+  orgs.forEach((o) => {
+    const opt = document.createElement('option');
+    opt.value = o.id;
+    opt.textContent = o.name;
+    tmOrganisationSelect.appendChild(opt);
+  });
+}
+
+tmOrganisationSelect.addEventListener('change', async () => {
+  const orgId = tmOrganisationSelect.value;
+  tmProjectSelect.innerHTML = '';
+  if (!orgId) {
+    tmProjectSelect.disabled = true;
+    tmProjectSelect.innerHTML = '<option value="">Select an organisation first</option>';
+    return;
+  }
+  tmProjectSelect.disabled = true;
+  tmProjectSelect.innerHTML = '<option value="">Loading…</option>';
+  try {
+    const projects = await fetch(`/api/organisations/${orgId}/projects`).then(r => r.json());
+    if (!Array.isArray(projects) || !projects.length) {
+      tmProjectSelect.innerHTML = '<option value="">No active projects found</option>';
+      return;
+    }
+    tmProjectSelect.innerHTML = '<option value="">None</option>' + projects.map((p) =>
+      `<option value="${p._id}">${escapeHtml(p.projectname || p._id)}</option>`
+    ).join('');
+    tmProjectSelect.disabled = false;
+  } catch {
+    tmProjectSelect.innerHTML = '<option value="">Failed to load projects</option>';
+  }
 });
 
 async function preFillFromScan(scanId, forceMode) {
@@ -229,23 +274,28 @@ async function startScan() {
   const { auth, error: authError } = buildAuthPayload();
   if (authError) return alert(authError);
 
+  const organisationId = tmOrganisationSelect.value || null;
+  const tmProjectId    = tmProjectSelect.value || null;
+  const tmProjectName  = tmProjectId ? tmProjectSelect.selectedOptions[0]?.textContent : null;
+  const tm = { organisationId, tmProjectId, tmProjectName };
+
   let body;
   if (mode === 'crawl') {
     const rootUrl  = document.getElementById('rootUrl').value.trim();
     if (!rootUrl) return alert('Enter a site root URL.');
     const maxPages = parseInt(document.getElementById('maxPages').value, 10) || 50;
     const maxDepth = parseInt(document.getElementById('maxDepth').value, 10) || 3;
-    body = { mode: 'crawl', rootUrl, options: { maxPages, maxDepth, tags, captureScreenshots, validateHtml, validateCss }, auth };
+    body = { mode: 'crawl', rootUrl, options: { maxPages, maxDepth, tags, captureScreenshots, validateHtml, validateCss }, auth, ...tm };
   } else if (mode === 'sitemap') {
     const sitemapUrl = document.getElementById('sitemapUrl').value.trim();
     if (!sitemapUrl) return alert('Enter a sitemap URL.');
     const maxPages = parseInt(document.getElementById('sitemapMaxPages').value, 10) || 50;
-    body = { mode: 'sitemap', sitemapUrl, options: { maxPages, tags, captureScreenshots, validateHtml, validateCss }, auth };
+    body = { mode: 'sitemap', sitemapUrl, options: { maxPages, tags, captureScreenshots, validateHtml, validateCss }, auth, ...tm };
   } else {
     const raw = document.getElementById('urlList').value.trim();
     if (!raw) return alert('Enter at least one URL.');
     const urls = raw.split('\n').map((s) => s.trim()).filter(Boolean);
-    body = { mode: 'list', urls, options: { tags, captureScreenshots, validateHtml, validateCss }, auth };
+    body = { mode: 'list', urls, options: { tags, captureScreenshots, validateHtml, validateCss }, auth, ...tm };
   }
 
   startBtn.disabled = true;
@@ -435,8 +485,16 @@ function renderResults(job) {
   if (pagesVisible && currentJobId) loadPagesPanel(currentJobId, 'pagesPanel');
   if (viewMode === 'group' && !findingsEmpty && currentJobId) {
     GroupsView.render(document.getElementById('groupsArea'), currentJobId,
-      { type: activeTypes, severities: activeFilters, url: activeUrlFilter }, writeSummaryCounts);
+      { type: activeTypes, severities: activeFilters, url: activeUrlFilter, raiseBug: raiseBugContext(job) }, writeSummaryCounts);
   }
+}
+
+// Shared by every GroupsView.render() call site below — enables the
+// "Raise bug" action only when this job was started with a Testing Manager
+// organisation/project selected (see the Testing Manager section of the
+// scan form and startScan()).
+function raiseBugContext(job) {
+  return { organisationId: job?.organisationId ?? null, tmProjectId: job?.tmProjectId ?? null };
 }
 
 async function togglePagesPanel(jobId) {
@@ -571,7 +629,7 @@ function setTypeFilter(type) {
   updateLocationColumnVisibility();
   if (viewMode === 'group' && currentJobId) {
     GroupsView.render(document.getElementById('groupsArea'), currentJobId,
-      { type: activeTypes, severities: activeFilters, url: activeUrlFilter }, writeSummaryCounts);
+      { type: activeTypes, severities: activeFilters, url: activeUrlFilter, raiseBug: raiseBugContext(lastJob) }, writeSummaryCounts);
   }
 }
 
@@ -639,7 +697,7 @@ function toggleFilter(impact) {
   applyFilters();
   if (viewMode === 'group' && currentJobId) {
     GroupsView.render(document.getElementById('groupsArea'), currentJobId,
-      { type: activeTypes, severities: activeFilters, url: activeUrlFilter }, writeSummaryCounts);
+      { type: activeTypes, severities: activeFilters, url: activeUrlFilter, raiseBug: raiseBugContext(lastJob) }, writeSummaryCounts);
   }
 }
 
