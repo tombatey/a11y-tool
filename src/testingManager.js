@@ -118,6 +118,16 @@ async function createIssue({ projectId, orgId, title, description, severity, ass
       severity,
       assigned_to: assignedTo,
       page_url:    pageUrl || null,
+      // The workflow declares these as parameters even though this
+      // integration never has a value for them — Bubble's Workflow API
+      // requires every declared parameter key to be present in the request
+      // body (MISSING_DATA otherwise), even when null. Same full parameter
+      // set as testing-manager-bridge's own payload shape.
+      steps:        null,
+      screenshot:   null,
+      browser:      null,
+      os:           null,
+      screen:       null,
       submitted_at: new Date().toISOString(),
     },
   });
