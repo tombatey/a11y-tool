@@ -57,13 +57,13 @@ async function getOrganisationById(tmOrgId) {
 }
 
 /**
- * Fetch Project records for an organisation with status = 'Active', for the
- * project dropdown shown when starting a scan.
+ * Fetch Project records for an organisation with projectStatus = 'Active',
+ * for the project dropdown shown when starting a scan.
  */
 async function getActiveProjects(tmOrgId) {
   const constraints = JSON.stringify([
-    { key: 'organisation', constraint_type: 'equals', value: tmOrgId },
-    { key: 'status',       constraint_type: 'equals', value: 'Active' },
+    { key: 'organisation',   constraint_type: 'equals', value: tmOrgId },
+    { key: 'projectStatus',  constraint_type: 'equals', value: 'Active' },
   ]);
   const data = await tmFetch('/obj/Project', { params: { constraints, sort_field: 'projectname', limit: 100 } });
   return data.response?.results ?? [];
