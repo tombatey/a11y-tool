@@ -303,6 +303,7 @@ window.GroupsView = (function () {
   // The modal DOM itself is still created lazily on first open (cheap to
   // defer, unlike the styles above which the group cards need immediately).
   let _openGroupKey = null;
+  let _openGroupTruncated = false;
 
   function ensureModal() {
     if (document.getElementById('raiseBugModal')) return;
@@ -340,12 +341,13 @@ window.GroupsView = (function () {
 
   // Testing Manager's Issue description field has a 5,000-character limit.
   // Below that, the full occurrence list (every URL + location) fits inline;
-  // above it, as many occurrence lines as fit are kept and the rest are
-  // noted as omitted rather than ever sending a description Testing Manager
-  // would reject. A proper fix for that overflow case — attaching the full
-  // list as a CSV Item on the Issue — needs a Testing Manager backend
-  // workflow that doesn't exist yet; this is the safe interim behaviour
-  // until that's built.
+  // above it, as many occurrence lines as fit are kept, the rest are noted
+  // as omitted, and the full list is instead attached as a CSV file on the
+  // Issue (server-side, in server.js's raise-bug route — it has the group's
+  // complete, untruncated occurrence data already). `truncated` here is
+  // what tells the server whether to build and attach that CSV; it reflects
+  // whether the *generated* description needed truncating, not whatever the
+  // user may have since edited it to in the modal.
   const DESCRIPTION_BUDGET = 4800;
 
   function buildRaiseBugDescription(g) {
@@ -364,7 +366,7 @@ window.GroupsView = (function () {
     });
 
     const full = `${header}\n\n${[occurrenceHeader, ...occurrenceLines].join('\n')}`;
-    if (full.length <= DESCRIPTION_BUDGET) return full;
+    if (full.length <= DESCRIPTION_BUDGET) return { text: full, truncated: false };
 
     const kept = [];
     const reserve = 140; // room for the truncation note below
@@ -375,9 +377,9 @@ window.GroupsView = (function () {
       used += line.length + 1;
     }
     const omitted = occurrenceLines.length - kept.length;
-    const note = `…and ${omitted} more occurrence${omitted === 1 ? '' : 's'} not shown — full list exceeds Testing Manager's 5,000-character description limit.`;
+    const note = `…and ${omitted} more occurrence${omitted === 1 ? '' : 's'} not shown here — see the attached CSV for the complete list.`;
 
-    return `${header}\n\n${[occurrenceHeader, ...kept, note].join('\n')}`;
+    return { text: `${header}\n\n${[occurrenceHeader, ...kept, note].join('\n')}`, truncated: true };
   }
 
   function _openRaiseBug(groupKey) {
@@ -386,8 +388,11 @@ window.GroupsView = (function () {
     _openGroupKey = groupKey;
     ensureModal();
 
+    const { text, truncated } = buildRaiseBugDescription(g);
+    _openGroupTruncated = truncated;
+
     document.getElementById('raiseBugTitle').value = g.title || '';
-    document.getElementById('raiseBugDescription').value = buildRaiseBugDescription(g);
+    document.getElementById('raiseBugDescription').value = text;
     document.getElementById('raiseBugSeverity').value = IMPACT_TO_SEVERITY[g.impact] || 'Minor';
     document.getElementById('raiseBugMsg').style.display = 'none';
 
@@ -413,6 +418,7 @@ window.GroupsView = (function () {
     const modal = document.getElementById('raiseBugModal');
     if (modal) modal.style.display = 'none';
     _openGroupKey = null;
+    _openGroupTruncated = false;
   }
 
   function showRaiseBugMsg(text) {
@@ -441,7 +447,7 @@ window.GroupsView = (function () {
       const res = await fetch(`/api/scan/${_ctx.scanId}/groups/${encodeURIComponent(_openGroupKey)}/raise-bug`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title, description, severity, assignedToTmUserId, assignedToName }),
+        body: JSON.stringify({ title, description, severity, assignedToTmUserId, assignedToName, descriptionTruncated: _openGroupTruncated }),
       });
       const result = await res.json().catch(() => ({}));
       if (!res.ok) {

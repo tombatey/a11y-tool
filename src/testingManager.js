@@ -115,11 +115,22 @@ const IMPACT_TO_SEVERITY = {
 /**
  * Create a bug (Issue) in Testing Manager via the existing /wf/create_ticket
  * workflow. Same payload shape as testing-manager-bridge's bubble.js, plus
- * assigned_to for the bug owner — verify this exact param name against the
- * real workflow, since the original contract always used a fixed system
- * user and never took an assignee from the caller.
+ * assigned_to for the bug owner and file for an optional attachment (added
+ * to the workflow specifically for this integration — creates an Item and
+ * links it into the new Issue's issueItems list when present). Both are
+ * additive/optional on the workflow side, unlike the required params below,
+ * so the widget's existing calls (which never send either) are unaffected.
+ *
+ * `attachment`, if given, is { filename, content } with `content` as a plain
+ * (not base64-encoded) string — this function does the encoding. Bubble's
+ * file-type API parameters do NOT accept a data: URI; per Bubble's own docs
+ * (manual.bubble.io/core-resources/api/the-bubble-api) the value must be a
+ * JSON object: { filename, contents: <base64, no "data:" prefix>, private }.
+ * Confirmed by testing a data: URI directly first — Bubble stored it as a
+ * literal string rather than converting it to a file, matching a
+ * misunderstanding, not a Bubble bug.
  */
-async function createIssue({ projectId, orgId, title, description, severity, assignedTo, pageUrl }) {
+async function createIssue({ projectId, orgId, title, description, severity, assignedTo, pageUrl, attachment }) {
   const data = await tmFetch('/wf/create_ticket', {
     method: 'POST',
     body: {
@@ -131,6 +142,14 @@ async function createIssue({ projectId, orgId, title, description, severity, ass
       severity,
       assigned_to: assignedTo,
       page_url:    pageUrl || null,
+      // Optional — the full occurrence list as a file when it's too large
+      // to fit inline in the description. Omitted (null) on every
+      // normal-sized bug.
+      file: attachment ? {
+        filename: attachment.filename,
+        contents: Buffer.from(attachment.content, 'utf8').toString('base64'),
+        private:  false,
+      } : null,
       // The workflow declares these as parameters even though this
       // integration never has a value for them — Bubble's Workflow API
       // requires every declared parameter key to be present in the request

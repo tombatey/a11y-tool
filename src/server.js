@@ -294,6 +294,25 @@ app.get('/api/scan/:id/groups', async (req, res) => {
 // requires the scan to have been started with an organisation/project
 // selected. One bug per (scan, group) — a second attempt on the same group
 // is rejected rather than creating a duplicate.
+//
+// Builds a CSV of every occurrence in a group (URL, location, HTML snippet)
+// for the file attachment — used when the description's own inline
+// occurrence list was too large for Testing Manager's 5,000-character limit
+// (see groupsView.js's buildRaiseBugDescription, which decides truncation).
+function occurrenceCsv(group) {
+  const esc = (val) => {
+    const s = String(val ?? '');
+    return (s.includes(',') || s.includes('"') || s.includes('\n')) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const row = (...cols) => cols.map(esc).join(',');
+  const locationText = (o) => o.failure_summary || (o.breadcrumb || []).slice(-3).join(' > ') || o.target_selector || '';
+  const lines = [
+    row('URL', 'Location', 'HTML Snippet'),
+    ...group.occurrences.map((o) => row(o.url, locationText(o), o.html_snippet || '')),
+  ];
+  return lines.join('\r\n');
+}
+
 app.post('/api/scan/:id/groups/:groupKey/raise-bug', async (req, res) => {
   if (!testingManager.isConfigured()) return res.status(503).json({ error: 'Testing Manager is not configured' });
 
@@ -320,7 +339,7 @@ app.post('/api/scan/:id/groups/:groupKey/raise-bug', async (req, res) => {
   const group  = groups.find((g) => g.group_key === req.params.groupKey);
   if (!group) return res.status(404).json({ error: 'Issue group not found' });
 
-  const { title, description, severity, assignedToTmUserId, assignedToName } = req.body || {};
+  const { title, description, severity, assignedToTmUserId, assignedToName, descriptionTruncated } = req.body || {};
   if (!title)              return res.status(400).json({ error: 'title is required' });
   if (!assignedToTmUserId) return res.status(400).json({ error: 'assignedToTmUserId is required' });
 
@@ -333,6 +352,9 @@ app.post('/api/scan/:id/groups/:groupKey/raise-bug', async (req, res) => {
       severity:    severity || testingManager.IMPACT_TO_SEVERITY[group.impact] || 'Minor',
       assignedTo:  assignedToTmUserId,
       pageUrl:     group.urls?.[0] || null,
+      attachment:  descriptionTruncated
+        ? { filename: 'occurrences.csv', content: occurrenceCsv(group) }
+        : null,
     });
 
     await insertRaisedBug({
