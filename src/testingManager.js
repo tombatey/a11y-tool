@@ -142,6 +142,11 @@ async function createIssue({ projectId, orgId, title, description, severity, ass
       severity,
       assigned_to: assignedTo,
       page_url:    pageUrl || null,
+      // Every bug this integration raises is an accessibility finding —
+      // a11y-tool's HTML/CSS validation findings go through the same "Raise
+      // bug" action too, but there's no separate category requested for
+      // those yet, so this stays a fixed value rather than a caller param.
+      issue_category: 'Accessibility',
       // Optional — the full occurrence list as a file when it's too large
       // to fit inline in the description. Omitted (null) on every
       // normal-sized bug.
