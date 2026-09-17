@@ -131,6 +131,11 @@ const IMPACT_TO_SEVERITY = {
  * misunderstanding, not a Bubble bug.
  */
 async function createIssue({ projectId, orgId, title, description, severity, assignedTo, pageUrl, attachment }) {
+  // Buffer once — used for both the base64 contents and the byte-size
+  // filesize parameter, which reflects the actual file size, not the ~33%
+  // larger base64-encoded size.
+  const attachmentBuffer = attachment ? Buffer.from(attachment.content, 'utf8') : null;
+
   const data = await tmFetch('/wf/create_ticket', {
     method: 'POST',
     body: {
@@ -150,11 +155,12 @@ async function createIssue({ projectId, orgId, title, description, severity, ass
       // Optional — the full occurrence list as a file when it's too large
       // to fit inline in the description. Omitted (null) on every
       // normal-sized bug.
-      file: attachment ? {
+      file: attachmentBuffer ? {
         filename: attachment.filename,
-        contents: Buffer.from(attachment.content, 'utf8').toString('base64'),
+        contents: attachmentBuffer.toString('base64'),
         private:  false,
       } : null,
+      filesize: attachmentBuffer ? attachmentBuffer.length : null,
       // The workflow declares these as parameters even though this
       // integration never has a value for them — Bubble's Workflow API
       // requires every declared parameter key to be present in the request
