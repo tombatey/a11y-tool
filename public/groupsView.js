@@ -79,6 +79,13 @@ window.GroupsView = (function () {
     return path ? escapeHtml(path) : '';
   }
 
+  // Same as occurrenceLocation but unescaped — for building plain-text
+  // content (the raise-bug description textarea value), not innerHTML.
+  function occurrenceLocationPlain(o) {
+    if (o.failure_summary) return o.failure_summary;
+    return (o.breadcrumb || []).slice(-3).join(' > ') || o.target_selector || '';
+  }
+
   function groupTagPills(g) {
     if (!g.wcag_tags || !g.wcag_tags.length) return '';
     const known = g.wcag_tags.filter((t) => WCAG_TAG_LABELS[t]);
@@ -331,6 +338,48 @@ window.GroupsView = (function () {
     document.body.appendChild(overlay);
   }
 
+  // Testing Manager's Issue description field has a 5,000-character limit.
+  // Below that, the full occurrence list (every URL + location) fits inline;
+  // above it, as many occurrence lines as fit are kept and the rest are
+  // noted as omitted rather than ever sending a description Testing Manager
+  // would reject. A proper fix for that overflow case — attaching the full
+  // list as a CSV Item on the Issue — needs a Testing Manager backend
+  // workflow that doesn't exist yet; this is the safe interim behaviour
+  // until that's built.
+  const DESCRIPTION_BUDGET = 4800;
+
+  function buildRaiseBugDescription(g) {
+    const base = (g.description || g.help || g.title || '').trim();
+    const tagLabels = (g.wcag_tags || []).map((t) => WCAG_TAG_LABELS[t]).filter(Boolean);
+
+    const headerParts = [base];
+    if (tagLabels.length) headerParts.push(`Tags: ${tagLabels.join(', ')}`);
+    if (g.help_url) headerParts.push(`Details: ${g.help_url}`);
+    const header = headerParts.join('\n\n');
+
+    const occurrenceHeader = `Occurrences (${g.occurrence_count} across ${g.url_count} URL${g.url_count === 1 ? '' : 's'}):`;
+    const occurrenceLines = g.occurrences.map((o, i) => {
+      const loc = occurrenceLocationPlain(o);
+      return `${i + 1}. ${o.url}${loc ? ' — ' + loc : ''}`;
+    });
+
+    const full = `${header}\n\n${[occurrenceHeader, ...occurrenceLines].join('\n')}`;
+    if (full.length <= DESCRIPTION_BUDGET) return full;
+
+    const kept = [];
+    const reserve = 140; // room for the truncation note below
+    let used = header.length + 2 + occurrenceHeader.length;
+    for (const line of occurrenceLines) {
+      if (used + line.length + 1 > DESCRIPTION_BUDGET - reserve) break;
+      kept.push(line);
+      used += line.length + 1;
+    }
+    const omitted = occurrenceLines.length - kept.length;
+    const note = `…and ${omitted} more occurrence${omitted === 1 ? '' : 's'} not shown — full list exceeds Testing Manager's 5,000-character description limit.`;
+
+    return `${header}\n\n${[occurrenceHeader, ...kept, note].join('\n')}`;
+  }
+
   function _openRaiseBug(groupKey) {
     const g = _lastGroups.find((x) => x.group_key === groupKey);
     if (!g) return;
@@ -338,7 +387,7 @@ window.GroupsView = (function () {
     ensureModal();
 
     document.getElementById('raiseBugTitle').value = g.title || '';
-    document.getElementById('raiseBugDescription').value = g.description || g.help || '';
+    document.getElementById('raiseBugDescription').value = buildRaiseBugDescription(g);
     document.getElementById('raiseBugSeverity').value = IMPACT_TO_SEVERITY[g.impact] || 'Minor';
     document.getElementById('raiseBugMsg').style.display = 'none';
 
