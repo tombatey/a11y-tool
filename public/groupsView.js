@@ -119,16 +119,24 @@ window.GroupsView = (function () {
         <td class="occ-snippet">${o.html_snippet ? `<code>${escapeHtml(o.html_snippet)}</code>` : ''}</td>
       </tr>`).join('');
 
+    // The raise-bug action lives in its own fixed-width column outside
+    // .group-card-main, rather than flowing inline with the badges/title/tags
+    // — otherwise its horizontal position drifts card to card depending on
+    // how much of that content happens to wrap onto extra lines.
+    const actionHtml = _ctx.enabled ? `<div class="group-card-action">${raiseBugControl(g)}</div>` : '';
+
     return `
     <div class="group-card">
       <div class="group-card-header" onclick="GroupsView._toggleBody('${bodyId}')">
-        <span class="badge ${g.impact || ''}">${IMPACT_LABEL[g.impact] || 'n/a'}</span>
-        <span class="type-badge ${g.type}">${TYPE_LABEL[g.type] || g.type}</span>
-        <span class="group-title">${escapeHtml(g.title)}</span>
-        ${g.rule_id ? `<span class="group-rule">${escapeHtml(g.rule_id)}</span>` : ''}
-        <span class="group-summary">${occurrenceCount} occurrence${occurrenceCount === 1 ? '' : 's'} across ${urlCount} URL${urlCount === 1 ? '' : 's'}</span>
-        ${raiseBugControl(g)}
-        ${groupTagPills(g)}
+        <div class="group-card-main">
+          <span class="badge ${g.impact || ''}">${IMPACT_LABEL[g.impact] || 'n/a'}</span>
+          <span class="type-badge ${g.type}">${TYPE_LABEL[g.type] || g.type}</span>
+          <span class="group-title">${escapeHtml(g.title)}</span>
+          ${g.rule_id ? `<span class="group-rule">${escapeHtml(g.rule_id)}</span>` : ''}
+          <span class="group-summary">${occurrenceCount} occurrence${occurrenceCount === 1 ? '' : 's'} across ${urlCount} URL${urlCount === 1 ? '' : 's'}</span>
+          ${groupTagPills(g)}
+        </div>
+        ${actionHtml}
       </div>
       <div class="group-card-body" id="${bodyId}" style="display:none">
         ${g.help_url ? `<div class="group-help"><a href="${escapeHtml(g.help_url)}" target="_blank" rel="noopener">Details</a></div>` : ''}
@@ -214,26 +222,34 @@ window.GroupsView = (function () {
     }
   }
 
-  // ─── Raise-bug modal ──────────────────────────────────────────────────────
-  // A single modal element shared across every group card, created lazily on
-  // first use and reused — matches this file's self-contained philosophy
-  // (its own styles injected once, no dependency on host-page CSS/markup).
-  let _openGroupKey = null;
-
-  function ensureModal() {
-    if (document.getElementById('raiseBugModal')) return;
-
+  // ─── Styles ───────────────────────────────────────────────────────────────
+  // Injected once, immediately when this script runs — not lazily on first
+  // modal open. This module's markup (raise-bug button/badge/column) renders
+  // as part of every normal render() call, long before anyone opens the
+  // modal, so its styles need to exist from the start; injecting them lazily
+  // left every group card unstyled (plain default <button>, plain text badge,
+  // action position drifting with wrapped content) until the modal had been
+  // opened once on that page load.
+  function injectStyles() {
+    if (document.getElementById('groupsViewStyles')) return;
     const style = document.createElement('style');
+    style.id = 'groupsViewStyles';
     style.textContent = `
-      .raise-bug-btn {
-        padding: 3px 10px; border: 1px solid #02BFF8; border-radius: 5px;
-        background: #E1F7FE; color: #014357; cursor: pointer; font-size: 11px;
-        font-weight: 600; font-family: inherit;
+      .group-card-header { flex-wrap: wrap; }
+      .group-card-main {
+        flex: 1 1 auto; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0;
       }
-      .raise-bug-btn:hover { background: #02BFF8; }
+      .group-card-action { flex: 0 0 auto; min-width: 96px; text-align: right; }
+
+      .raise-bug-btn {
+        padding: 6px 14px; border: none; border-radius: 6px;
+        background: #02BFF8; color: #014357; cursor: pointer; font-size: 12px;
+        font-weight: 600; font-family: inherit; white-space: nowrap;
+      }
+      .raise-bug-btn:hover { background: #02A2D3; }
       .raised-bug-badge {
-        font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 99px;
-        background: #F3FAE6; color: #547717;
+        display: inline-block; font-size: 11px; font-weight: 600; padding: 4px 10px; border-radius: 99px;
+        background: #F3FAE6; color: #547717; white-space: nowrap;
       }
       .raise-bug-modal-overlay {
         position: fixed; inset: 0; background: rgba(15,23,42,0.5); z-index: 1100;
@@ -261,6 +277,16 @@ window.GroupsView = (function () {
       .raise-bug-msg { margin-top: 12px; font-size: 12px; padding: 8px 12px; border-radius: 6px; background: #fdf2f2; color: #8c2f2f; }
     `;
     document.head.appendChild(style);
+  }
+  injectStyles();
+
+  // ─── Raise-bug modal ──────────────────────────────────────────────────────
+  // The modal DOM itself is still created lazily on first open (cheap to
+  // defer, unlike the styles above which the group cards need immediately).
+  let _openGroupKey = null;
+
+  function ensureModal() {
+    if (document.getElementById('raiseBugModal')) return;
 
     const overlay = document.createElement('div');
     overlay.id = 'raiseBugModal';

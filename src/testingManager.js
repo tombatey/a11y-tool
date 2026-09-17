@@ -134,7 +134,20 @@ async function createIssue({ projectId, orgId, title, description, severity, ass
 
   const issueId = data?.response?.id || data?.id || null;
   if (!issueId) throw new Error('Testing Manager returned success but no issue ID was found in the response.');
-  return { tmIssueId: issueId, tmIssueRef: data?.response?.issueRef ?? null };
+
+  // create_ticket's response only carries the Bubble unique_id, not the
+  // human-readable issueRef (e.g. "BUG-123") — fetch the record we just
+  // created to get it. Best-effort: the bug is already raised either way,
+  // so a failure here shouldn't fail the whole raise-bug action.
+  let tmIssueRef = null;
+  try {
+    const issue = await tmFetch(`/obj/Issue/${encodeURIComponent(issueId)}`);
+    tmIssueRef = issue?.response?.issueRef ?? null;
+  } catch {
+    tmIssueRef = null;
+  }
+
+  return { tmIssueId: issueId, tmIssueRef };
 }
 
 module.exports = {
