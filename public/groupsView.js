@@ -237,7 +237,12 @@ window.GroupsView = (function () {
     style.textContent = `
       .group-card-header { flex-wrap: wrap; }
       .group-card-main {
-        flex: 1 1 auto; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0;
+        /* flex-basis: 0 (not auto) so this item is sized from the available
+           row width, not from its own unwrapped content's max-content width
+           — with auto, the browser sized it as if none of its own children
+           had wrapped, which was wide enough to push .group-card-action onto
+           its own line instead of sitting beside it. */
+        flex: 1 1 0%; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0;
       }
       .group-card-action { flex: 0 0 auto; min-width: 96px; text-align: right; }
 
