@@ -20,6 +20,19 @@ function baseUrl() {
   return process.env.TESTING_MANAGER_BASE_URL.replace(/\/+$/, '');
 }
 
+/**
+ * Builds a link to view an issue in the Testing Manager web app, e.g.
+ * https://testingmanager.co.uk/version-test/issue/<unique_id> on the test
+ * environment, or https://testingmanager.co.uk/issue/<unique_id> live.
+ * Derived from TESTING_MANAGER_BASE_URL (which points at .../api/1.1) rather
+ * than a separate env var, so staging's /version-test/ segment is carried
+ * over automatically without needing to configure it twice.
+ */
+function getIssueUrl(tmIssueId) {
+  const appBase = baseUrl().replace(/\/api\/1\.1$/, '');
+  return `${appBase}/issue/${encodeURIComponent(tmIssueId)}`;
+}
+
 async function tmFetch(path, { method = 'GET', params, body } = {}) {
   const url = new URL(`${baseUrl()}${path}`);
   if (params) {
@@ -156,5 +169,6 @@ module.exports = {
   getActiveProjects,
   getAssignableUsers,
   createIssue,
+  getIssueUrl,
   IMPACT_TO_SEVERITY,
 };

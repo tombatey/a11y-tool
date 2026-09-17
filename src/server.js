@@ -278,7 +278,14 @@ app.get('/api/scan/:id/groups', async (req, res) => {
   if (!job) return res.status(404).json({ error: 'Job not found' });
   const groups = buildGroups(req.params.id, job.findings);
   const raisedBugs = await getRaisedBugs(req.params.id);
-  groups.forEach((g) => { g.raisedBug = raisedBugs[g.group_key] || null; });
+  const tmConfigured = testingManager.isConfigured();
+  groups.forEach((g) => {
+    const raised = raisedBugs[g.group_key] || null;
+    g.raisedBug = raised && {
+      ...raised,
+      tmIssueUrl: tmConfigured ? testingManager.getIssueUrl(raised.tmIssueId) : null,
+    };
+  });
   res.json({ scanId: req.params.id, status: job.status, groupCount: groups.length, groups });
 });
 
@@ -301,7 +308,12 @@ app.post('/api/scan/:id/groups/:groupKey/raise-bug', async (req, res) => {
 
   const existing = await getRaisedBugs(req.params.id);
   if (existing[req.params.groupKey]) {
-    return res.status(409).json({ error: 'A bug has already been raised for this issue', ...existing[req.params.groupKey] });
+    const already = existing[req.params.groupKey];
+    return res.status(409).json({
+      error: 'A bug has already been raised for this issue',
+      ...already,
+      tmIssueUrl: testingManager.getIssueUrl(already.tmIssueId),
+    });
   }
 
   const groups = buildGroups(req.params.id, job.findings);
@@ -333,7 +345,7 @@ app.post('/api/scan/:id/groups/:groupKey/raise-bug', async (req, res) => {
       raisedByEmail:  req.user?.email || null,
     });
 
-    res.status(201).json({ tmIssueId, tmIssueRef });
+    res.status(201).json({ tmIssueId, tmIssueRef, tmIssueUrl: testingManager.getIssueUrl(tmIssueId) });
   } catch (err) {
     res.status(502).json({ error: `Failed to raise bug in Testing Manager: ${err.message}` });
   }

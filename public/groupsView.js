@@ -96,9 +96,15 @@ window.GroupsView = (function () {
   function raiseBugControl(g) {
     if (!_ctx.enabled) return '';
     const key = escapeHtml(g.group_key);
-    const inner = g.raisedBug
-      ? `<span class="raised-bug-badge">Raised: ${escapeHtml(g.raisedBug.tmIssueRef || g.raisedBug.tmIssueId)}</span>`
-      : `<button type="button" class="raise-bug-btn" onclick="event.stopPropagation(); GroupsView._openRaiseBug('${key}')">Raise bug</button>`;
+    const label = `Raised: ${escapeHtml(g.raisedBug?.tmIssueRef || g.raisedBug?.tmIssueId)}`;
+    let inner;
+    if (g.raisedBug?.tmIssueUrl) {
+      inner = `<a class="raised-bug-badge" href="${escapeHtml(g.raisedBug.tmIssueUrl)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${label}</a>`;
+    } else if (g.raisedBug) {
+      inner = `<span class="raised-bug-badge">${label}</span>`;
+    } else {
+      inner = `<button type="button" class="raise-bug-btn" onclick="event.stopPropagation(); GroupsView._openRaiseBug('${key}')">Raise bug</button>`;
+    }
     return `<span class="raise-bug-slot" data-group-key="${key}">${inner}</span>`;
   }
 
@@ -254,8 +260,9 @@ window.GroupsView = (function () {
       .raise-bug-btn:hover { background: #02A2D3; }
       .raised-bug-badge {
         display: inline-block; font-size: 11px; font-weight: 600; padding: 4px 10px; border-radius: 99px;
-        background: #F3FAE6; color: #547717; white-space: nowrap;
+        background: #F3FAE6; color: #547717; white-space: nowrap; text-decoration: none;
       }
+      a.raised-bug-badge:hover { background: #e5f3d1; }
       .raise-bug-modal-overlay {
         position: fixed; inset: 0; background: rgba(15,23,42,0.5); z-index: 1100;
         align-items: center; justify-content: center; padding: 16px;
@@ -394,7 +401,7 @@ window.GroupsView = (function () {
       }
 
       const g = _lastGroups.find((x) => x.group_key === _openGroupKey);
-      if (g) g.raisedBug = { tmIssueId: result.tmIssueId, tmIssueRef: result.tmIssueRef, assignedToName };
+      if (g) g.raisedBug = { tmIssueId: result.tmIssueId, tmIssueRef: result.tmIssueRef, tmIssueUrl: result.tmIssueUrl, assignedToName };
 
       const slot = document.querySelector(`.raise-bug-slot[data-group-key="${CSS.escape(_openGroupKey)}"]`);
       if (slot && g) slot.outerHTML = raiseBugControl(g);
