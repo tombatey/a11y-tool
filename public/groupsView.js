@@ -288,7 +288,7 @@ window.GroupsView = (function () {
       .raise-bug-modal textarea { resize: vertical; }
       .raise-bug-modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
       .raise-bug-modal-actions button {
-        padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: 600;
+        margin: 0; padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: 600;
         cursor: pointer; font-family: inherit; border: 1px solid #E2E8F0; background: #fff; color: #334155;
       }
       .raise-bug-modal-actions button.primary { background: #02BFF8; color: #014357; border-color: #02BFF8; }
