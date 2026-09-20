@@ -13,6 +13,8 @@ then leaves `[Unreleased]` empty for the next cycle.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-09-20
+
 New feature - integration with Testing Manager
 
 - Easily raise bugs in Testing Manager directly from A11y Scanner results.
