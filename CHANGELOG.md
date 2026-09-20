@@ -13,6 +13,15 @@ then leaves `[Unreleased]` empty for the next cycle.
 
 ## [Unreleased]
 
+New feature - integration with Testing Manager
+
+- Easily raise bugs in Testing Manager directly from A11y Scanner results.
+- Once your organisation is connected, select a project from the dropdown when starting a scan.
+- From results, group by issue and click Raise Bug - complete the modal to send the issue to Testing Manager.
+- Bug includes all occurrences of that issue including URL and location.
+- If needed, a CSV with all occurrences is automatically added to the bug as an attachment.
+- Once raised, issue reference displayed in A11y Scanner.
+
 ## [0.5.0] - 2026-09-12
 
 - New feature - ability to group findings that occur on each URL into a single issue containing all the URLs and locations where each occurrence is found. This condenses the results into an easier to read list of issues.
