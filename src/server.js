@@ -5,9 +5,10 @@ const session      = require('express-session');
 const pgSession    = require('connect-pg-simple')(session);
 const pool         = require('./db');
 const { passport, requireAuth } = require('./auth');
-const { createJob, getJob, listJobs, requestStop, getPages } = require('./jobStore');
+const { createJob, getJob, listJobs, requestStop, getPages, getRaisedBugs, insertRaisedBug } = require('./jobStore');
 const { runJob }   = require('./orchestrator');
 const { buildGroups } = require('./grouping');
+const testingManager = require('./testingManager');
 const { generateReportHtml } = require('./report');
 const { generateChangelogHtml } = require('./changelogPage');
 const { readChangelog, getLatestRelease } = require('./changelog');
@@ -139,6 +140,73 @@ app.delete('/api/users/:id', async (req, res) => {
   res.json({ ok: true });
 });
 
+// ─── Organisations (Testing Manager linkage) ──────────────────────────────────
+app.get('/api/organisations', async (_req, res) => {
+  const result = await pool.query(
+    'SELECT id, name, tm_org_id, created_at FROM organisations ORDER BY name'
+  );
+  res.json(result.rows);
+});
+
+app.post('/api/organisations', async (req, res) => {
+  const { name, tm_org_id } = req.body || {};
+  if (!name)      return res.status(400).json({ error: 'name is required' });
+  if (!tm_org_id) return res.status(400).json({ error: 'tm_org_id is required' });
+
+  if (testingManager.isConfigured()) {
+    try {
+      await testingManager.getOrganisationById(tm_org_id);
+    } catch (err) {
+      return res.status(400).json({ error: `Could not verify this Testing Manager organisation ID: ${err.message}` });
+    }
+  }
+
+  try {
+    const result = await pool.query(
+      `INSERT INTO organisations (name, tm_org_id) VALUES ($1, $2)
+       RETURNING id, name, tm_org_id, created_at`,
+      [name.trim(), tm_org_id.trim()]
+    );
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/organisations/:id', async (req, res) => {
+  await pool.query('DELETE FROM organisations WHERE id = $1', [req.params.id]);
+  res.json({ ok: true });
+});
+
+async function getOrganisation(id) {
+  const result = await pool.query('SELECT * FROM organisations WHERE id = $1', [id]);
+  return result.rows[0] || null;
+}
+
+app.get('/api/organisations/:id/projects', async (req, res) => {
+  if (!testingManager.isConfigured()) return res.status(503).json({ error: 'Testing Manager is not configured' });
+  const org = await getOrganisation(req.params.id);
+  if (!org) return res.status(404).json({ error: 'Organisation not found' });
+  try {
+    const projects = await testingManager.getActiveProjects(org.tm_org_id);
+    res.json(projects);
+  } catch (err) {
+    res.status(502).json({ error: `Failed to fetch projects from Testing Manager: ${err.message}` });
+  }
+});
+
+app.get('/api/organisations/:id/users', async (req, res) => {
+  if (!testingManager.isConfigured()) return res.status(503).json({ error: 'Testing Manager is not configured' });
+  const org = await getOrganisation(req.params.id);
+  if (!org) return res.status(404).json({ error: 'Organisation not found' });
+  try {
+    const users = await testingManager.getAssignableUsers(org.tm_org_id);
+    res.json(users);
+  } catch (err) {
+    res.status(502).json({ error: `Failed to fetch users from Testing Manager: ${err.message}` });
+  }
+});
+
 // ─── Scan API ─────────────────────────────────────────────────────────────────
 // Validates the optional target-site auth block. Returns an error string,
 // or null if the auth block (or its absence) is valid.
@@ -164,7 +232,7 @@ function validateAuth(auth) {
 }
 
 app.post('/api/scan', async (req, res) => {
-  const { mode, rootUrl, urls, sitemapUrl, options, auth } = req.body || {};
+  const { mode, rootUrl, urls, sitemapUrl, options, auth, organisationId, tmProjectId, tmProjectName } = req.body || {};
   if (mode === 'crawl' && !rootUrl)
     return res.status(400).json({ error: 'rootUrl is required for crawl mode' });
   if (mode === 'list' && (!Array.isArray(urls) || urls.length === 0))
@@ -179,7 +247,11 @@ app.post('/api/scan', async (req, res) => {
   const authError = validateAuth(auth);
   if (authError) return res.status(400).json({ error: authError });
 
-  const job = await createJob({ mode, rootUrl, urls, sitemapUrl, options, auth }, req.user?.email || null);
+  const job = await createJob(
+    { mode, rootUrl, urls, sitemapUrl, options, auth },
+    req.user?.email || null,
+    { organisationId: organisationId || null, tmProjectId: tmProjectId || null, tmProjectName: tmProjectName || null }
+  );
   runJob(job).catch((err) => console.error(`Job ${job.id} failed:`, err));
   res.status(202).json({ jobId: job.id });
 });
@@ -205,7 +277,100 @@ app.get('/api/scan/:id/groups', async (req, res) => {
   const job = await getJob(req.params.id);
   if (!job) return res.status(404).json({ error: 'Job not found' });
   const groups = buildGroups(req.params.id, job.findings);
+  const raisedBugs = await getRaisedBugs(req.params.id);
+  const tmConfigured = testingManager.isConfigured();
+  groups.forEach((g) => {
+    const raised = raisedBugs[g.group_key] || null;
+    g.raisedBug = raised && {
+      ...raised,
+      tmIssueUrl: tmConfigured ? testingManager.getIssueUrl(raised.tmIssueId) : null,
+    };
+  });
   res.json({ scanId: req.params.id, status: job.status, groupCount: groups.length, groups });
+});
+
+// ─── Raise bug ────────────────────────────────────────────────────────────────
+// Raises one Testing Manager bug for an issue group (see grouping.js) —
+// requires the scan to have been started with an organisation/project
+// selected. One bug per (scan, group) — a second attempt on the same group
+// is rejected rather than creating a duplicate.
+//
+// Builds a CSV of every occurrence in a group (URL, location, HTML snippet)
+// for the file attachment — used when the description's own inline
+// occurrence list was too large for Testing Manager's 5,000-character limit
+// (see groupsView.js's buildRaiseBugDescription, which decides truncation).
+function occurrenceCsv(group) {
+  const esc = (val) => {
+    const s = String(val ?? '');
+    return (s.includes(',') || s.includes('"') || s.includes('\n')) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const row = (...cols) => cols.map(esc).join(',');
+  const locationText = (o) => o.failure_summary || (o.breadcrumb || []).slice(-3).join(' > ') || o.target_selector || '';
+  const lines = [
+    row('URL', 'Location', 'HTML Snippet'),
+    ...group.occurrences.map((o) => row(o.url, locationText(o), o.html_snippet || '')),
+  ];
+  return lines.join('\r\n');
+}
+
+app.post('/api/scan/:id/groups/:groupKey/raise-bug', async (req, res) => {
+  if (!testingManager.isConfigured()) return res.status(503).json({ error: 'Testing Manager is not configured' });
+
+  const job = await getJob(req.params.id);
+  if (!job) return res.status(404).json({ error: 'Job not found' });
+  if (!job.organisationId || !job.tmProjectId) {
+    return res.status(400).json({ error: 'This scan has no Testing Manager organisation/project selected' });
+  }
+
+  const org = await getOrganisation(job.organisationId);
+  if (!org) return res.status(400).json({ error: 'This scan\'s organisation no longer exists' });
+
+  const existing = await getRaisedBugs(req.params.id);
+  if (existing[req.params.groupKey]) {
+    const already = existing[req.params.groupKey];
+    return res.status(409).json({
+      error: 'A bug has already been raised for this issue',
+      ...already,
+      tmIssueUrl: testingManager.getIssueUrl(already.tmIssueId),
+    });
+  }
+
+  const groups = buildGroups(req.params.id, job.findings);
+  const group  = groups.find((g) => g.group_key === req.params.groupKey);
+  if (!group) return res.status(404).json({ error: 'Issue group not found' });
+
+  const { title, description, severity, assignedToTmUserId, assignedToName, descriptionTruncated } = req.body || {};
+  if (!title)              return res.status(400).json({ error: 'title is required' });
+  if (!assignedToTmUserId) return res.status(400).json({ error: 'assignedToTmUserId is required' });
+
+  try {
+    const { tmIssueId, tmIssueRef } = await testingManager.createIssue({
+      projectId:   job.tmProjectId,
+      orgId:       org.tm_org_id,
+      title,
+      description: description || group.description || group.help || '',
+      severity:    severity || testingManager.IMPACT_TO_SEVERITY[group.impact] || 'Minor',
+      assignedTo:  assignedToTmUserId,
+      pageUrl:     group.urls?.[0] || null,
+      attachment:  descriptionTruncated
+        ? { filename: 'occurrences.csv', content: occurrenceCsv(group) }
+        : null,
+    });
+
+    await insertRaisedBug({
+      scanId:         req.params.id,
+      groupKey:       req.params.groupKey,
+      tmIssueId,
+      tmIssueRef,
+      assignedToTmId: assignedToTmUserId,
+      assignedToName: assignedToName || null,
+      raisedByEmail:  req.user?.email || null,
+    });
+
+    res.status(201).json({ tmIssueId, tmIssueRef, tmIssueUrl: testingManager.getIssueUrl(tmIssueId) });
+  } catch (err) {
+    res.status(502).json({ error: `Failed to raise bug in Testing Manager: ${err.message}` });
+  }
 });
 
 // ─── PDF export ───────────────────────────────────────────────────────────────

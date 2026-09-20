@@ -82,3 +82,37 @@ CREATE INDEX IF NOT EXISTS pages_scan_id_idx ON pages(scan_id);
 
 -- Add scan initiator email (safe to re-run on existing databases)
 ALTER TABLE scans ADD COLUMN IF NOT EXISTS started_by_email TEXT;
+
+-- Organisations — maps a display name to a Testing Manager organisation ID,
+-- so scans can be linked to the right Testing Manager org/project for
+-- raising bugs. See src/testingManager.js.
+CREATE TABLE IF NOT EXISTS organisations (
+  id         SERIAL      PRIMARY KEY,
+  name       TEXT        NOT NULL,
+  tm_org_id  TEXT        NOT NULL UNIQUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Optional Testing Manager linkage for a scan — set when the scan was
+-- started with an organisation/project selected, enabling "raise bug" on
+-- its results. NULL/absent for scans run without the integration.
+ALTER TABLE scans ADD COLUMN IF NOT EXISTS organisation_id INT REFERENCES organisations(id);
+ALTER TABLE scans ADD COLUMN IF NOT EXISTS tm_project_id   TEXT;
+ALTER TABLE scans ADD COLUMN IF NOT EXISTS tm_project_name TEXT;
+
+-- Records a bug already raised in Testing Manager for a given issue group
+-- (grouping.js's group_key) within a scan — prevents double-raising and lets
+-- the UI show "Raised: BUG-123" on that group.
+CREATE TABLE IF NOT EXISTS raised_bugs (
+  id                SERIAL      PRIMARY KEY,
+  scan_id           UUID        NOT NULL REFERENCES scans(id) ON DELETE CASCADE,
+  group_key         TEXT        NOT NULL,
+  tm_issue_id       TEXT        NOT NULL,
+  tm_issue_ref      TEXT,
+  assigned_to_tm_id TEXT,
+  assigned_to_name  TEXT,
+  raised_by_email   TEXT,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (scan_id, group_key)
+);
+CREATE INDEX IF NOT EXISTS raised_bugs_scan_id_idx ON raised_bugs(scan_id);

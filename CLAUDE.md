@@ -44,6 +44,7 @@ a11y-tool/
 │   ├── email.js           # Loops.so scan-complete notification
 │   ├── report.js          # Self-contained HTML report generator for PDF export
 │   ├── grouping.js        # Collapses same-issue findings across URLs into groups (see below)
+│   ├── testingManager.js  # Testing Manager (Bubble) API client — see "Testing Manager integration" below
 │   └── validators/
 │       ├── html.js        # Posts rendered HTML to local vnu server, normalises findings
 │       └── css.js         # Fetches stylesheets, runs W3C API + stylelint, deduplicates
@@ -54,6 +55,7 @@ a11y-tool/
 │   ├── groupsView.js      # Shared "By issue" grouped-results view (loaded by both pages above)
 │   ├── login.html         # Google OAuth login page
 │   ├── team.html          # Team management UI
+│   ├── organisations.html # Testing Manager organisation linking UI (admin)
 │   └── images/
 │       └── webdepend-logo.png
 ├── db/
@@ -78,13 +80,14 @@ a11y-tool/
 
 ## Database schema
 
-Six tables in PostgreSQL. The schema is in `db/schema.sql` and is idempotent
+Eight tables in PostgreSQL. The schema is in `db/schema.sql` and is idempotent
 (`CREATE TABLE IF NOT EXISTS`, `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`).
 
 ```
 scans           — one row per scan job
   id UUID PK, status, mode, input JSONB, pages_discovered, pages_scanned,
-  stop_requested BOOL, started_by_email, created_at, updated_at
+  stop_requested BOOL, started_by_email, organisation_id INT FK, tm_project_id,
+  tm_project_name, created_at, updated_at
 
 pages           — one row per page visited in a scan
   id SERIAL PK, scan_id UUID FK, url, findings_count, critical_count,
@@ -100,6 +103,14 @@ scan_errors     — crawler/scan errors (page load failures etc.)
 
 users           — Google accounts whitelisted to access the tool
   id SERIAL PK, email TEXT UNIQUE, name, created_at, last_login
+
+organisations   — maps a display name to a Testing Manager organisation ID
+  id SERIAL PK, name, tm_org_id TEXT UNIQUE, created_at
+
+raised_bugs     — one row per Testing Manager bug raised from an issue group
+  id SERIAL PK, scan_id UUID FK, group_key, tm_issue_id, tm_issue_ref,
+  assigned_to_tm_id, assigned_to_name, raised_by_email, created_at
+  UNIQUE (scan_id, group_key)
 
 session         — express-session store (connect-pg-simple)
   sid VARCHAR PK, sess JSON, expire TIMESTAMP
@@ -154,6 +165,11 @@ CREDENTIALS_ENCRYPTION_KEY  32-byte hex key for encrypting target-site auth pass
 VNU_URL           URL of the vnu HTML checker service (default: http://localhost:8888)
 LOOPS_API_KEY     Loops.so API key (optional — notifications disabled if absent)
 LOOPS_SCAN_COMPLETE_TEMPLATE_ID  Loops transactional template ID (optional)
+TESTING_MANAGER_BASE_URL    Testing Manager Bubble Data API base, e.g. https://testingmanager.co.uk/api/1.1
+                  (optional — organisation linking, project/user lookups, and
+                  "raise bug" are disabled if absent; see "Testing Manager
+                  integration" below)
+TESTING_MANAGER_API_TOKEN   Shared service-account bearer token for Testing Manager
 ```
 
 ---
@@ -261,6 +277,59 @@ CSS uses a set of CSS variables defined in each page's `:root` block using the W
 - **API**: `GET /api/scan/:id/groups` (in `server.js`) returns `{ scanId, status, groupCount, groups }`. Each group carries `occurrences[]` (url, target_selector, breadcrumb, html_snippet, failure_summary, location), the union of `wcag_tags`, worst `impact`, and distinct `urls`/`url_count`.
 - **Frontend**: `public/groupsView.js`, a shared script loaded by both `index.html` and `history.html` (mirrors the `version-footer.js` pattern), renders group cards and owns all three filter dimensions together — `GroupsView.render(containerEl, scanId, { type, severities, url }, onCounts)`. `onCounts` reports per-severity *group* counts (not occurrence counts) back to the host page so its severity summary cards read correctly while "By issue" is selected. A `urlFilter` also narrows each shown group's own occurrence list/counts to just that URL, mirroring how the flat table hides non-matching rows outright.
 - **Known gap**: CSS findings are keyed by their stylesheet's URL, not the page that referenced it (see "Known constraints and gotchas" below) — so a CSS group's `urls`/occurrences are stylesheet URLs, and filtering "By issue" to a specific *page* URL will never match a CSS group.
+
+### Testing Manager integration
+
+Lets a scan's issue groups (see "Issue grouping" above) be raised as bugs
+directly in Testing Manager, a separate Bubble app (`testingmanager.co.uk`)
+that WebDepend also uses for other internal tools
+(`webdepend-slack-app`'s `services/testingManager.js` is the reference for
+its read-side API shape; `testing-manager-bridge`'s `/wf/create_ticket`
+workflow is what `src/testingManager.js`'s `createIssue()` calls).
+
+- **Organisations admin (`public/organisations.html`, `/api/organisations`)**:
+  a pure mapping table — an internal display name plus a Testing Manager
+  organisation's Bubble `unique_id`. Adding one calls
+  `testingManager.getOrganisationById()` first to catch a typo'd ID
+  immediately rather than at scan time.
+- **Scan setup**: `index.html`'s "Testing Manager" section lets you pick one
+  of those organisations and then one of its **active** Testing Manager
+  projects (`GET /api/organisations/:id/projects`, filtered to
+  `status = 'Active'`). Both are optional — a scan started without them
+  simply has no "Raise bug" action on its results. Selections are persisted
+  on the `scans` row (`organisation_id`, `tm_project_id`, `tm_project_name`)
+  via `createJob()`.
+- **Raising a bug**: each group card in `groupsView.js`'s "By issue" view
+  shows a "Raise bug" button when the scan has a `tm_project_id`, or a
+  "Raised: BUG-123" badge once one exists. The button opens a small
+  self-contained modal (styles injected once by `groupsView.js` itself, no
+  host-page CSS dependency) prefilled from the group's title/description and
+  an axe-core-impact-to-severity mapping (`IMPACT_TO_SEVERITY` — duplicated
+  in both `src/testingManager.js` and `groupsView.js`, kept in sync
+  manually), with an assignee picked from
+  `GET /api/organisations/:id/users`. Submitting posts to
+  `POST /api/scan/:id/groups/:groupKey/raise-bug`, which resolves the group
+  fresh from `grouping.js`'s `buildGroups()` (groups are never persisted —
+  see "Issue grouping"), calls `testingManager.createIssue()`, and records
+  the result in `raised_bugs`.
+- **Assignable users**: `testingManager.getAssignableUsers()` fetches all
+  Testing Manager users with `isActive = true`, then filters in JS to
+  `organisation === tmOrgId || isStaff(user)`, where "staff" means
+  `admin === true || userRole === 'Tester'` — the same rule
+  `webdepend-slack-app/services/auth.js`'s `isTMStaff` uses for "WebDepend,
+  not a customer".
+- **Idempotency**: `raised_bugs` has a `UNIQUE (scan_id, group_key)`
+  constraint — the raise-bug route checks for an existing row first and
+  returns 409 rather than ever double-raising the same group. Since
+  `group_key` is the same content-derived string `grouping.js` computes (not
+  a persisted group ID), the normalization-logic caveat in "Issue grouping"
+  above applies here too: changing how `grouping.js` derives keys changes
+  which future findings match an already-raised group.
+- **Graceful degradation**: every Testing Manager route/action checks
+  `testingManager.isConfigured()` first (`TESTING_MANAGER_BASE_URL` +
+  `TESTING_MANAGER_API_TOKEN` both set) and returns 503 rather than a raw
+  fetch failure if the integration isn't configured — the rest of the app
+  (scanning, history, exports) works identically either way.
 
 ### API conventions
 

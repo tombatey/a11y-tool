@@ -11,6 +11,17 @@ window.GroupsView = (function () {
   const IMPACT_LABEL = { critical: 'Critical', serious: 'Serious', moderate: 'Moderate', minor: 'Minor' };
   const TYPE_LABEL   = { accessibility: 'A11Y', 'html-validation': 'HTML', 'css-validation': 'CSS', 'css-lint': 'CSS' };
 
+  // axe-core impact -> Testing Manager severity option set — mirrors
+  // src/testingManager.js's IMPACT_TO_SEVERITY, used to prefill the raise-bug
+  // modal's severity field (still editable).
+  const IMPACT_TO_SEVERITY = { critical: 'Critical', serious: 'Major', moderate: 'Minor', minor: 'Trivial' };
+
+  // Set by render() on every call — the raise-bug modal (triggered from an
+  // inline onclick with only a group_key to hand it) reads this rather than
+  // needing every call site to thread scanId/organisationId through by hand.
+  let _ctx = { scanId: null, organisationId: null, enabled: false };
+  let _lastGroups = []; // most recently fetched groups, for the raise-bug modal to read title/description/impact from
+
   // Mirrors the host pages' WCAG_TAG_LABELS/findingTagPills — kept as its
   // own copy for the same reason as typeCategory() below (this module stays
   // usable without depending on host-page globals). Empty for HTML/CSS
@@ -68,6 +79,13 @@ window.GroupsView = (function () {
     return path ? escapeHtml(path) : '';
   }
 
+  // Same as occurrenceLocation but unescaped — for building plain-text
+  // content (the raise-bug description textarea value), not innerHTML.
+  function occurrenceLocationPlain(o) {
+    if (o.failure_summary) return o.failure_summary;
+    return (o.breadcrumb || []).slice(-3).join(' > ') || o.target_selector || '';
+  }
+
   function groupTagPills(g) {
     if (!g.wcag_tags || !g.wcag_tags.length) return '';
     const known = g.wcag_tags.filter((t) => WCAG_TAG_LABELS[t]);
@@ -75,6 +93,26 @@ window.GroupsView = (function () {
     return `<div class="group-tags">${known.map((t) =>
       `<span class="finding-tag-pill">${escapeHtml(WCAG_TAG_LABELS[t])}</span>`
     ).join('')}</div>`;
+  }
+
+  // Renders either a "Raise bug" button or a "Raised: BUG-123" badge for a
+  // group, or nothing at all when this scan has no Testing Manager project
+  // selected (see _ctx, set by render()). Wrapped in a stable data-group-key
+  // slot so a successful raise can patch just this element in place without
+  // a full re-render (see _submitRaiseBug).
+  function raiseBugControl(g) {
+    if (!_ctx.enabled) return '';
+    const key = escapeHtml(g.group_key);
+    const label = `Raised: ${escapeHtml(g.raisedBug?.tmIssueRef || g.raisedBug?.tmIssueId)}`;
+    let inner;
+    if (g.raisedBug?.tmIssueUrl) {
+      inner = `<a class="raised-bug-badge" href="${escapeHtml(g.raisedBug.tmIssueUrl)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${label}</a>`;
+    } else if (g.raisedBug) {
+      inner = `<span class="raised-bug-badge">${label}</span>`;
+    } else {
+      inner = `<button type="button" class="raise-bug-btn" onclick="event.stopPropagation(); GroupsView._openRaiseBug('${key}')">Raise bug</button>`;
+    }
+    return `<span class="raise-bug-slot" data-group-key="${key}">${inner}</span>`;
   }
 
   // `urlFilter`, if given, narrows a group's own occurrence list (and the
@@ -94,15 +132,24 @@ window.GroupsView = (function () {
         <td class="occ-snippet">${o.html_snippet ? `<code>${escapeHtml(o.html_snippet)}</code>` : ''}</td>
       </tr>`).join('');
 
+    // The raise-bug action lives in its own fixed-width column outside
+    // .group-card-main, rather than flowing inline with the badges/title/tags
+    // — otherwise its horizontal position drifts card to card depending on
+    // how much of that content happens to wrap onto extra lines.
+    const actionHtml = _ctx.enabled ? `<div class="group-card-action">${raiseBugControl(g)}</div>` : '';
+
     return `
     <div class="group-card">
       <div class="group-card-header" onclick="GroupsView._toggleBody('${bodyId}')">
-        <span class="badge ${g.impact || ''}">${IMPACT_LABEL[g.impact] || 'n/a'}</span>
-        <span class="type-badge ${g.type}">${TYPE_LABEL[g.type] || g.type}</span>
-        <span class="group-title">${escapeHtml(g.title)}</span>
-        ${g.rule_id ? `<span class="group-rule">${escapeHtml(g.rule_id)}</span>` : ''}
-        <span class="group-summary">${occurrenceCount} occurrence${occurrenceCount === 1 ? '' : 's'} across ${urlCount} URL${urlCount === 1 ? '' : 's'}</span>
-        ${groupTagPills(g)}
+        <div class="group-card-main">
+          <span class="badge ${g.impact || ''}">${IMPACT_LABEL[g.impact] || 'n/a'}</span>
+          <span class="type-badge ${g.type}">${TYPE_LABEL[g.type] || g.type}</span>
+          <span class="group-title">${escapeHtml(g.title)}</span>
+          ${g.rule_id ? `<span class="group-rule">${escapeHtml(g.rule_id)}</span>` : ''}
+          <span class="group-summary">${occurrenceCount} occurrence${occurrenceCount === 1 ? '' : 's'} across ${urlCount} URL${urlCount === 1 ? '' : 's'}</span>
+          ${groupTagPills(g)}
+        </div>
+        ${actionHtml}
       </div>
       <div class="group-card-body" id="${bodyId}" style="display:none">
         ${g.help_url ? `<div class="group-help"><a href="${escapeHtml(g.help_url)}" target="_blank" rel="noopener">Details</a></div>` : ''}
@@ -143,7 +190,12 @@ window.GroupsView = (function () {
   // not further narrowed by which severity is currently isolated.
   async function render(containerEl, scanId, filters, onCounts) {
     if (!containerEl) return;
-    const { type: activeType, severities: activeSeverities, url: urlFilter } = filters || {};
+    const { type: activeType, severities: activeSeverities, url: urlFilter, raiseBug } = filters || {};
+    _ctx = {
+      scanId,
+      organisationId: raiseBug?.organisationId ?? null,
+      enabled: !!(raiseBug && raiseBug.tmProjectId),
+    };
     containerEl.innerHTML = '<div class="empty">Loading grouped issues…</div>';
     let data;
     try {
@@ -154,6 +206,7 @@ window.GroupsView = (function () {
       containerEl.innerHTML = '<div class="empty">Failed to load grouped issues.</div>';
       return;
     }
+    _lastGroups = data.groups;
 
     const typeFiltered = (!activeType || activeType === 'all')
       ? data.groups
@@ -182,5 +235,240 @@ window.GroupsView = (function () {
     }
   }
 
-  return { renderToggle, render, _toggleBody };
+  // ─── Styles ───────────────────────────────────────────────────────────────
+  // Injected once, immediately when this script runs — not lazily on first
+  // modal open. This module's markup (raise-bug button/badge/column) renders
+  // as part of every normal render() call, long before anyone opens the
+  // modal, so its styles need to exist from the start; injecting them lazily
+  // left every group card unstyled (plain default <button>, plain text badge,
+  // action position drifting with wrapped content) until the modal had been
+  // opened once on that page load.
+  function injectStyles() {
+    if (document.getElementById('groupsViewStyles')) return;
+    const style = document.createElement('style');
+    style.id = 'groupsViewStyles';
+    style.textContent = `
+      .group-card-header { flex-wrap: wrap; }
+      .group-card-main {
+        /* flex-basis: 0 (not auto) so this item is sized from the available
+           row width, not from its own unwrapped content's max-content width
+           — with auto, the browser sized it as if none of its own children
+           had wrapped, which was wide enough to push .group-card-action onto
+           its own line instead of sitting beside it. */
+        flex: 1 1 0%; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0;
+      }
+      .group-card-action { flex: 0 0 auto; min-width: 96px; text-align: right; }
+
+      .raise-bug-btn {
+        padding: 6px 14px; border: none; border-radius: 6px;
+        background: #02BFF8; color: #014357; cursor: pointer; font-size: 12px;
+        font-weight: 600; font-family: inherit; white-space: nowrap;
+      }
+      .raise-bug-btn:hover { background: #02A2D3; }
+      .raised-bug-badge {
+        display: inline-block; font-size: 11px; font-weight: 600; padding: 4px 10px; border-radius: 99px;
+        background: #F3FAE6; color: #547717; white-space: nowrap; text-decoration: none;
+      }
+      a.raised-bug-badge:hover { background: #e5f3d1; }
+      .raise-bug-modal-overlay {
+        position: fixed; inset: 0; background: rgba(15,23,42,0.5); z-index: 1100;
+        align-items: center; justify-content: center; padding: 16px;
+      }
+      .raise-bug-modal {
+        background: #fff; border-radius: 10px; padding: 24px; width: 100%; max-width: 440px;
+        max-height: 90vh; overflow-y: auto; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      }
+      .raise-bug-modal h3 { margin: 0 0 16px; font-size: 15px; color: #014357; }
+      .raise-bug-modal label { display: block; font-size: 12px; color: #64748B; margin: 14px 0 4px; }
+      .raise-bug-modal label:first-of-type { margin-top: 0; }
+      .raise-bug-modal input[type=text], .raise-bug-modal textarea, .raise-bug-modal select {
+        width: 100%; padding: 8px 10px; border: 1px solid #E2E8F0; border-radius: 6px;
+        font-size: 13px; font-family: inherit; background: #F8FAFC; box-sizing: border-box;
+      }
+      .raise-bug-modal textarea { resize: vertical; }
+      .raise-bug-modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+      .raise-bug-modal-actions button {
+        padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: 600;
+        cursor: pointer; font-family: inherit; border: 1px solid #E2E8F0; background: #fff; color: #334155;
+      }
+      .raise-bug-modal-actions button.primary { background: #02BFF8; color: #014357; border-color: #02BFF8; }
+      .raise-bug-modal-actions button:disabled { opacity: 0.5; cursor: default; }
+      .raise-bug-msg { margin-top: 12px; font-size: 12px; padding: 8px 12px; border-radius: 6px; background: #fdf2f2; color: #8c2f2f; }
+    `;
+    document.head.appendChild(style);
+  }
+  injectStyles();
+
+  // ─── Raise-bug modal ──────────────────────────────────────────────────────
+  // The modal DOM itself is still created lazily on first open (cheap to
+  // defer, unlike the styles above which the group cards need immediately).
+  let _openGroupKey = null;
+  let _openGroupTruncated = false;
+
+  function ensureModal() {
+    if (document.getElementById('raiseBugModal')) return;
+
+    const overlay = document.createElement('div');
+    overlay.id = 'raiseBugModal';
+    overlay.className = 'raise-bug-modal-overlay';
+    overlay.style.display = 'none';
+    overlay.innerHTML = `
+      <div class="raise-bug-modal">
+        <h3>Raise bug in Testing Manager</h3>
+        <label for="raiseBugTitle">Title</label>
+        <input type="text" id="raiseBugTitle" />
+        <label for="raiseBugDescription">Description</label>
+        <textarea id="raiseBugDescription" rows="4"></textarea>
+        <label for="raiseBugSeverity">Severity</label>
+        <select id="raiseBugSeverity">
+          <option value="Trivial">Trivial</option>
+          <option value="Minor">Minor</option>
+          <option value="Major">Major</option>
+          <option value="Critical">Critical</option>
+          <option value="Blocker">Blocker</option>
+        </select>
+        <label for="raiseBugAssignee">Assign to</label>
+        <select id="raiseBugAssignee"><option value="">Loading…</option></select>
+        <div id="raiseBugMsg" class="raise-bug-msg" style="display:none"></div>
+        <div class="raise-bug-modal-actions">
+          <button type="button" onclick="GroupsView._closeRaiseBug()">Cancel</button>
+          <button type="button" class="primary" id="raiseBugSubmitBtn" onclick="GroupsView._submitRaiseBug()">Raise bug</button>
+        </div>
+      </div>`;
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) _closeRaiseBug(); });
+    document.body.appendChild(overlay);
+  }
+
+  // Testing Manager's Issue description field has a 5,000-character limit.
+  // Below that, the full occurrence list (every URL + location) fits inline;
+  // above it, as many occurrence lines as fit are kept, the rest are noted
+  // as omitted, and the full list is instead attached as a CSV file on the
+  // Issue (server-side, in server.js's raise-bug route — it has the group's
+  // complete, untruncated occurrence data already). `truncated` here is
+  // what tells the server whether to build and attach that CSV; it reflects
+  // whether the *generated* description needed truncating, not whatever the
+  // user may have since edited it to in the modal.
+  const DESCRIPTION_BUDGET = 4800;
+
+  function buildRaiseBugDescription(g) {
+    const base = (g.description || g.help || g.title || '').trim();
+    const tagLabels = (g.wcag_tags || []).map((t) => WCAG_TAG_LABELS[t]).filter(Boolean);
+
+    const headerParts = [base];
+    if (tagLabels.length) headerParts.push(`Tags: ${tagLabels.join(', ')}`);
+    if (g.help_url) headerParts.push(`Details: ${g.help_url}`);
+    const header = headerParts.join('\n\n');
+
+    const occurrenceHeader = `Occurrences (${g.occurrence_count} across ${g.url_count} URL${g.url_count === 1 ? '' : 's'}):`;
+    const occurrenceLines = g.occurrences.map((o, i) => {
+      const loc = occurrenceLocationPlain(o);
+      return `${i + 1}. ${o.url}${loc ? ' — ' + loc : ''}`;
+    });
+
+    const full = `${header}\n\n${[occurrenceHeader, ...occurrenceLines].join('\n')}`;
+    if (full.length <= DESCRIPTION_BUDGET) return { text: full, truncated: false };
+
+    const kept = [];
+    const reserve = 140; // room for the truncation note below
+    let used = header.length + 2 + occurrenceHeader.length;
+    for (const line of occurrenceLines) {
+      if (used + line.length + 1 > DESCRIPTION_BUDGET - reserve) break;
+      kept.push(line);
+      used += line.length + 1;
+    }
+    const omitted = occurrenceLines.length - kept.length;
+    const note = `…and ${omitted} more occurrence${omitted === 1 ? '' : 's'} not shown here — see the attached CSV for the complete list.`;
+
+    return { text: `${header}\n\n${[occurrenceHeader, ...kept, note].join('\n')}`, truncated: true };
+  }
+
+  function _openRaiseBug(groupKey) {
+    const g = _lastGroups.find((x) => x.group_key === groupKey);
+    if (!g) return;
+    _openGroupKey = groupKey;
+    ensureModal();
+
+    const { text, truncated } = buildRaiseBugDescription(g);
+    _openGroupTruncated = truncated;
+
+    document.getElementById('raiseBugTitle').value = g.title || '';
+    document.getElementById('raiseBugDescription').value = text;
+    document.getElementById('raiseBugSeverity').value = IMPACT_TO_SEVERITY[g.impact] || 'Minor';
+    document.getElementById('raiseBugMsg').style.display = 'none';
+
+    const assigneeSelect = document.getElementById('raiseBugAssignee');
+    assigneeSelect.innerHTML = '<option value="">Loading…</option>';
+    document.getElementById('raiseBugModal').style.display = 'flex';
+
+    fetch(`/api/organisations/${_ctx.organisationId}/users`)
+      .then((r) => r.json())
+      .then((users) => {
+        if (!Array.isArray(users) || !users.length) {
+          assigneeSelect.innerHTML = '<option value="">No assignable users found</option>';
+          return;
+        }
+        assigneeSelect.innerHTML = '<option value="">Choose someone…</option>' + users.map((u) =>
+          `<option value="${escapeHtml(u._id)}" data-name="${escapeHtml(u.firstLast || u._id)}">${escapeHtml(u.firstLast || u._id)}</option>`
+        ).join('');
+      })
+      .catch(() => { assigneeSelect.innerHTML = '<option value="">Failed to load users</option>'; });
+  }
+
+  function _closeRaiseBug() {
+    const modal = document.getElementById('raiseBugModal');
+    if (modal) modal.style.display = 'none';
+    _openGroupKey = null;
+    _openGroupTruncated = false;
+  }
+
+  function showRaiseBugMsg(text) {
+    const msg = document.getElementById('raiseBugMsg');
+    msg.textContent = text;
+    msg.style.display = 'block';
+  }
+
+  async function _submitRaiseBug() {
+    if (!_openGroupKey) return;
+    const title       = document.getElementById('raiseBugTitle').value.trim();
+    const description = document.getElementById('raiseBugDescription').value.trim();
+    const severity    = document.getElementById('raiseBugSeverity').value;
+    const assigneeSelect     = document.getElementById('raiseBugAssignee');
+    const assignedToTmUserId = assigneeSelect.value;
+    const assignedToName     = assigneeSelect.selectedOptions[0]?.dataset.name || '';
+
+    if (!title)              { showRaiseBugMsg('Title is required.'); return; }
+    if (!assignedToTmUserId) { showRaiseBugMsg('Choose someone to assign this to.'); return; }
+
+    const btn = document.getElementById('raiseBugSubmitBtn');
+    btn.disabled = true;
+    btn.textContent = 'Raising…';
+
+    try {
+      const res = await fetch(`/api/scan/${_ctx.scanId}/groups/${encodeURIComponent(_openGroupKey)}/raise-bug`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title, description, severity, assignedToTmUserId, assignedToName, descriptionTruncated: _openGroupTruncated }),
+      });
+      const result = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        showRaiseBugMsg(result.error || 'Failed to raise bug.');
+        return;
+      }
+
+      const g = _lastGroups.find((x) => x.group_key === _openGroupKey);
+      if (g) g.raisedBug = { tmIssueId: result.tmIssueId, tmIssueRef: result.tmIssueRef, tmIssueUrl: result.tmIssueUrl, assignedToName };
+
+      const slot = document.querySelector(`.raise-bug-slot[data-group-key="${CSS.escape(_openGroupKey)}"]`);
+      if (slot && g) slot.outerHTML = raiseBugControl(g);
+
+      _closeRaiseBug();
+    } catch (err) {
+      showRaiseBugMsg('Failed to raise bug.');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Raise bug';
+    }
+  }
+
+  return { renderToggle, render, _toggleBody, _openRaiseBug, _closeRaiseBug, _submitRaiseBug };
 })();
