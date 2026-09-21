@@ -14,8 +14,9 @@
 6. [Scan history](#6-scan-history)
 7. [Re-scanning](#7-re-scanning)
 8. [Exporting results](#8-exporting-results)
-9. [Team management](#9-team-management)
-10. [Tips and best practices](#10-tips-and-best-practices)
+9. [Raising bugs in Testing Manager](#9-raising-bugs-in-testing-manager)
+10. [Team management](#10-team-management)
+11. [Tips and best practices](#11-tips-and-best-practices)
 
 ---
 
@@ -27,7 +28,7 @@ The scanner is restricted to WebDepend team members.
 2. Click **Sign in with Google**
 3. Use your **@webdepend.co.uk** Google Workspace account
 
-If you see an "not authorised" error, ask an existing team member to add you via the Team page (see [Team management](#9-team-management)).
+If you see an "not authorised" error, ask an existing team member to add you via the Team page (see [Team management](#10-team-management)).
 
 ---
 
@@ -123,7 +124,7 @@ Six cards show at a glance:
 A toggle above the results — **By occurrence** / **By issue** — switches between two ways of looking at the same findings:
 
 - **By occurrence** (the default) — a flat table, one row per individual finding. This is the classic view described below.
-- **By issue** — the same findings collapsed into one card per *distinct issue*, each listing every URL and location it was found at (e.g. "Select element must have an accessible name — 3 occurrences across 3 URLs"). This makes it much easier to see how widespread a single problem is across a site, instead of scrolling past the same issue repeated once per page. It's also the first step toward an upcoming integration with Testing Manager, where one bug will be raised per issue rather than one per occurrence.
+- **By issue** — the same findings collapsed into one card per *distinct issue*, each listing every URL and location it was found at (e.g. "Select element must have an accessible name — 3 occurrences across 3 URLs"). This makes it much easier to see how widespread a single problem is across a site, instead of scrolling past the same issue repeated once per page. It's also where you raise bugs in Testing Manager — one per issue, rather than one per occurrence — see [Section 9](#9-raising-bugs-in-testing-manager).
 
 Both views share the same severity, check-type, and page filters (see [Section 5](#5-filtering-results)) — switching between them keeps whatever filters are active. The severity summary cards adapt too: in **By occurrence** they count individual findings; in **By issue** they count distinct issues instead, so the numbers can look quite different between the two views for the same scan (e.g. one issue occurring on 30 pages counts as 30 in By occurrence but just 1 in By issue).
 
@@ -276,7 +277,54 @@ The CSV uses UTF-8 with a BOM so it opens correctly in Excel without encoding is
 
 ---
 
-## 9. Team management
+## 9. Raising bugs in Testing Manager
+
+A11y Scanner can raise bugs directly in Testing Manager from your scan results, so you don't have to manually copy issue details across.
+
+### 9.1 Linking an organisation (one-off admin setup)
+
+Before a client's scans can raise bugs, their organisation needs linking to Testing Manager. This only needs doing once per client.
+
+1. Click **Organisations** in the top navigation
+2. Enter a **Name** (for your own reference in A11y Scanner)
+3. Enter the client's **Testing Manager organisation ID** (found on their organisation record in Testing Manager)
+4. Click **Add organisation**
+
+> A11y Scanner checks the ID against Testing Manager before saving, so a typo is caught immediately rather than failing later when someone tries to raise a bug.
+
+### 9.2 Selecting a project when starting a scan
+
+In the scan form, under **Testing Manager**:
+
+1. Choose the client's **Organisation** from the dropdown
+2. Once selected, choose the **Project** to raise bugs into — only that organisation's active Testing Manager projects are listed
+
+Both fields are optional. If you skip them, the scan runs normally but won't offer **Raise bug** on its results — useful for exploratory scans, or sites that don't have a Testing Manager project set up yet.
+
+### 9.3 Raising a bug from results
+
+Once a scan with an organisation and project selected has completed:
+
+1. Switch to the **By issue** view (see [Section 4](#4-understanding-results))
+2. Click **Raise bug** on the issue you want to report — it sits in its own column on the right of each issue card
+3. Review the pre-filled modal:
+
+| Field | Pre-filled with | Editable? |
+|-------|-----------------|-----------|
+| **Title** | The issue's title | Yes |
+| **Description** | The issue summary, relevant WCAG/category tags, a details link, and a full list of every URL and location the issue occurs at | Yes |
+| **Severity** | Mapped from the issue's impact level (Critical → Critical, Serious → Major, Moderate → Minor, Minor → Trivial) | Yes |
+| **Assign to** | Not pre-filled | Choose from active users who belong to the client's organisation, or WebDepend staff |
+
+4. Click **Raise bug**
+
+Once raised, the button is replaced with a **Raised: BUG-123** badge — click it to open the bug directly in Testing Manager. Each issue can only be raised once per scan; the button doesn't reappear afterwards.
+
+> **Large issues:** if an issue occurs across many pages, the full list of URLs and locations may be too long to fit in Testing Manager's description field. When that happens, A11y Scanner automatically attaches the complete list as a CSV file on the bug instead, and the description notes that it's attached.
+
+---
+
+## 10. Team management
 
 Click **Team** in the top navigation to manage who can access the scanner.
 
@@ -296,7 +344,7 @@ Click **Remove** on the right side of any team member row. They will lose access
 
 ---
 
-## 10. Tips and best practices
+## 11. Tips and best practices
 
 ### When to use Crawl vs URL list
 

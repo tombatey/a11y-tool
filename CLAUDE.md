@@ -165,11 +165,14 @@ CREDENTIALS_ENCRYPTION_KEY  32-byte hex key for encrypting target-site auth pass
 VNU_URL           URL of the vnu HTML checker service (default: http://localhost:8888)
 LOOPS_API_KEY     Loops.so API key (optional — notifications disabled if absent)
 LOOPS_SCAN_COMPLETE_TEMPLATE_ID  Loops transactional template ID (optional)
-TESTING_MANAGER_BASE_URL    Testing Manager Bubble Data API base, e.g. https://testingmanager.co.uk/api/1.1
-                  (optional — organisation linking, project/user lookups, and
-                  "raise bug" are disabled if absent; see "Testing Manager
-                  integration" below)
+TESTING_MANAGER_BASE_URL    Testing Manager Bubble API base — Live: https://testingmanager.co.uk/api/1.1
+                  Development: https://testingmanager.co.uk/version-test/api/1.1
+                  (staging uses Development, production uses Live — these are
+                  separate databases with separate org/project/user IDs; optional
+                  — organisation linking, project/user lookups, and "raise bug"
+                  are disabled if absent; see "Testing Manager integration" below)
 TESTING_MANAGER_API_TOKEN   Shared service-account bearer token for Testing Manager
+                  (matching Live or Development per TESTING_MANAGER_BASE_URL above)
 ```
 
 ---
@@ -270,7 +273,7 @@ CSS uses a set of CSS variables defined in each page's `:root` block using the W
 
 ### Issue grouping ("By issue" view)
 
-`src/grouping.js` collapses a scan's findings that represent the same underlying issue (found on multiple URLs/elements) into groups — prep for a future Testing Manager integration that will raise one bug per group instead of one per occurrence. It's a pure function, `buildGroups(scanId, findings) -> groups[]`, computed on demand from the same `findings` rows `getJob()` already returns — no new table, no migration.
+`src/grouping.js` collapses a scan's findings that represent the same underlying issue (found on multiple URLs/elements) into groups — this is what "Raise bug" (see "Testing Manager integration" below) raises one bug per, instead of one per occurrence. It's a pure function, `buildGroups(scanId, findings) -> groups[]`, computed on demand from the same `findings` rows `getJob()` already returns — no new table, no migration.
 
 - **Grouping key**: axe-core, stylelint, and w3c-css *errors* have a genuinely stable `rule_id`, so those group by `rule_id` directly. vnu (HTML validation) and w3c-css *warnings* don't — vnu's `rule_id` is a slug of the entire free-text message (including the specific attribute/element it names), and every w3c-css warning shares the literal `rule_id` `'css-warning'`. For those, `grouping.js` normalizes the message (quoted/variable tokens → `"…"` placeholders) to recover a reusable template as the key, e.g. `Attribute "foo" not allowed on element "div"` and `Attribute "bar" not allowed on element "span"` both collapse to one group. Changing that normalization logic changes group identity for message-derived groups — relevant if a future feature ever persists state keyed by `group_key`.
 - **`group_key` format**: `` `${scanId}|${type}|${source_tool}|${keyKind}:${keyValue}` `` — namespaced so nothing collides across scans/types/tools.
@@ -282,12 +285,25 @@ CSS uses a set of CSS variables defined in each page's `:root` block using the W
 
 Lets a scan's issue groups (see "Issue grouping" above) be raised as bugs
 directly in Testing Manager, a separate Bubble app (`testingmanager.co.uk`)
-that WebDepend also uses for other internal tools
-(`webdepend-slack-app`'s `services/testingManager.js` is the reference for
-its read-side API shape; `testing-manager-bridge`'s `/wf/create_ticket`
-workflow is what `src/testingManager.js`'s `createIssue()` calls).
+that WebDepend also uses for other internal tools. `webdepend-slack-app`'s
+`services/testingManager.js` was the reference for the read-side API shape
+(Data API — `GET`/`POST /obj/{Type}`); bug creation goes through
+`testing-manager-bridge`'s pre-existing `/wf/create_ticket` workflow
+(Workflow API), extended specifically for this integration with several new
+parameters — see the payload table below.
 
-- **Organisations admin (`public/organisations.html`, `/api/organisations`)**:
+Bubble keeps **Development** and **Live** as genuinely separate
+environments — separate databases (so organisation/project/user unique_ids
+never match across them) and separate publish state (a workflow change made
+in the Bubble editor isn't live until explicitly deployed there). Staging's
+`TESTING_MANAGER_BASE_URL` points at Development
+(`.../version-test/api/1.1`); production points at Live (`.../api/1.1`).
+Something that works on one and not the other is almost always an
+environment mismatch (wrong org/project/user ID for that database, or a
+workflow change not yet published to Live) rather than an a11y-tool bug —
+check that before debugging the app code.
+
+- **Organisations admin** (`public/organisations.html`, `/api/organisations`):
   a pure mapping table — an internal display name plus a Testing Manager
   organisation's Bubble `unique_id`. Adding one calls
   `testingManager.getOrganisationById()` first to catch a typo'd ID
@@ -295,23 +311,48 @@ workflow is what `src/testingManager.js`'s `createIssue()` calls).
 - **Scan setup**: `index.html`'s "Testing Manager" section lets you pick one
   of those organisations and then one of its **active** Testing Manager
   projects (`GET /api/organisations/:id/projects`, filtered to
-  `status = 'Active'`). Both are optional — a scan started without them
-  simply has no "Raise bug" action on its results. Selections are persisted
-  on the `scans` row (`organisation_id`, `tm_project_id`, `tm_project_name`)
-  via `createJob()`.
+  `projectStatus = 'Active'` — note the field name; it is *not* `status`).
+  Both are optional — a scan started without them simply has no "Raise bug"
+  action on its results. Selections persist on the `scans` row
+  (`organisation_id`, `tm_project_id`, `tm_project_name`) via `createJob()`.
 - **Raising a bug**: each group card in `groupsView.js`'s "By issue" view
-  shows a "Raise bug" button when the scan has a `tm_project_id`, or a
-  "Raised: BUG-123" badge once one exists. The button opens a small
-  self-contained modal (styles injected once by `groupsView.js` itself, no
-  host-page CSS dependency) prefilled from the group's title/description and
-  an axe-core-impact-to-severity mapping (`IMPACT_TO_SEVERITY` — duplicated
-  in both `src/testingManager.js` and `groupsView.js`, kept in sync
-  manually), with an assignee picked from
-  `GET /api/organisations/:id/users`. Submitting posts to
-  `POST /api/scan/:id/groups/:groupKey/raise-bug`, which resolves the group
-  fresh from `grouping.js`'s `buildGroups()` (groups are never persisted —
-  see "Issue grouping"), calls `testingManager.createIssue()`, and records
-  the result in `raised_bugs`.
+  shows a "Raise bug" button — in its own fixed-width `.group-card-action`
+  column, not flowing inline with the wrapping badges/title/tags, otherwise
+  its position drifts card to card (that column needs `flex-basis: 0%`, not
+  `auto`, or the sibling content's own unwrapped width pushes it onto a new
+  line — see the code comment if this regresses) — when the scan has a
+  `tm_project_id`, or a "Raised: BUG-123" badge that links to the bug
+  (`testingManager.getIssueUrl()`) once one exists. The button opens a small
+  self-contained modal whose CSS (including the button/badge/column styles
+  every group card needs) is injected **eagerly at script load**, not
+  lazily on first modal open — group cards render long before anyone opens
+  the modal, so lazy injection left them unstyled until it had been opened
+  once that page load. The modal is prefilled from the group:
+  - **Title** — the group's title
+  - **Description** — description/help text, labelled WCAG/category tags,
+    a `Details:` link (`help_url`), and a full numbered occurrence list
+    (URL + location) for every occurrence — see "Description/attachment
+    budget" below for what happens when that doesn't fit
+  - **Severity** — `IMPACT_TO_SEVERITY` maps axe-core impact to Testing
+    Manager's severity option set (`critical→Critical`, `serious→Major`,
+    `moderate→Minor`, `minor→Trivial`) — duplicated in both
+    `src/testingManager.js` and `groupsView.js`, kept in sync manually.
+    Confirmed against the real option set; still editable in the modal.
+  - **Assign to** — from `GET /api/organisations/:id/users`
+
+  Submitting posts to `POST /api/scan/:id/groups/:groupKey/raise-bug`, which
+  resolves the group fresh from `grouping.js`'s `buildGroups()` (groups are
+  never persisted — see "Issue grouping"), calls `testingManager.createIssue()`,
+  and records the result in `raised_bugs`.
+- **Description/attachment budget**: Testing Manager's Issue description has
+  a 5,000-character hard limit. `groupsView.js`'s `buildRaiseBugDescription()`
+  keeps a 4,800-character budget; if the full occurrence list doesn't fit,
+  it truncates the inline list (with a note) and returns `truncated: true`.
+  The modal sends that as `descriptionTruncated` on submit; when true,
+  `server.js`'s route builds a CSV of the group's **complete, untruncated**
+  occurrence data (`occurrenceCsv()` — URL, location, HTML snippet) and
+  passes it to `createIssue()` as `attachment`, which Testing Manager stores
+  as a `File`-type `Item` linked into the Issue's `issueItems` list.
 - **Assignable users**: `testingManager.getAssignableUsers()` fetches all
   Testing Manager users with `isActive = true`, then filters in JS to
   `organisation === tmOrgId || isStaff(user)`, where "staff" means
@@ -330,6 +371,37 @@ workflow is what `src/testingManager.js`'s `createIssue()` calls).
   `TESTING_MANAGER_API_TOKEN` both set) and returns 503 rather than a raw
   fetch failure if the integration isn't configured — the rest of the app
   (scanning, history, exports) works identically either way.
+
+#### `/wf/create_ticket` payload (`src/testingManager.js`'s `createIssue()`)
+
+This workflow predates this integration — it's shared with
+`testing-manager-bridge`'s public bug-report widget, so everything below is
+additive on top of the original contract and, with one exception noted
+below, required nothing from the widget's existing calls to change.
+
+| Param | Sent as | Notes |
+|---|---|---|
+| `assigned_to` | Bubble `User` unique_id | the modal's "Assign to" selection |
+| `issue_category` | `'Accessibility'` (fixed) | every bug this integration raises is one; no per-call variation yet |
+| `file` | `{ filename, contents, private: false }` \| `null` | **not** a `data:...;base64,...` string — confirmed against Bubble's own API docs after a data-URI string was silently stored as literal text instead of a real file. `contents` is base64 with no `data:` prefix |
+| `filesize` | number (bytes) \| `null` | the *raw* attachment's byte length, not the ~33% larger base64-encoded length — Testing Manager sets `Item Filesize` from this directly |
+| `steps`, `screenshot`, `browser`, `os`, `screen` | always `null` | required parameters on this workflow that this integration has no value for. Bubble's Workflow API needs the *key* present even when the value is `null` (`MISSING_DATA` otherwise) — sending these as explicit `null` (not omitting them) was the fix |
+
+`raisedBy` is **not** a parameter here — Testing Manager's workflow sets it
+internally to a fixed "system user" record. That user's ID is
+environment-specific (see the Development/Live note above), so a `raisedBy`
+that works on one environment and not the other means that workflow step is
+pointed at the wrong environment's user, not something to fix in this repo.
+
+Two Bubble Workflow API behaviours worth remembering if this workflow
+changes again: a **required** parameter only needs its *key* present in the
+request body — the value itself can be `null`. A new **optional** parameter
+is safe to add without breaking existing callers, but if the step consuming
+it is conditioned on the wrong thing (`assigned_to`/`issue_category`
+briefly only ran when `file` was also present, since they'd been added to
+the same conditional step), it'll silently no-op for every call that
+doesn't also satisfy that other condition — test a new parameter both with
+and without the others present, not just in isolation.
 
 ### API conventions
 
