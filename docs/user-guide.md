@@ -34,7 +34,7 @@ If you see an "not authorised" error, ask an existing team member to add you via
 
 ## 2. Running a scan
 
-The scanner has two modes — choose based on what you need.
+The scanner has three modes — choose based on what you need.
 
 ### Crawl a site
 
@@ -57,6 +57,18 @@ Use this when you have a specific set of pages to check — for example, after a
 2. Paste your URLs into the text area, **one per line**
 3. Configure your scan options
 4. Click **Start scan**
+
+### Scan a sitemap
+
+Use this when the client has a sitemap listing the pages to scan — often the fastest way to get complete, accurate page coverage without relying on the crawler to discover links itself.
+
+1. Select **Scan a sitemap**
+2. Enter the **Sitemap URL** (e.g. `https://example.com/sitemap.xml`)
+3. Set **Max pages** — how many pages to scan at most (default: 50)
+4. Configure your scan options
+5. Click **Start scan**
+
+> **Note:** Sitemap index files (a sitemap that just lists other sitemaps rather than pages) are supported — child sitemaps are fetched automatically, so pointing this at a top-level sitemap index will discover every page across all of them.
 
 ### During a scan
 
@@ -214,7 +226,7 @@ Click **History** in the top navigation to view all past scans.
 
 Each row shows:
 - Date and time
-- Mode (Crawl or URL List) and target URL
+- Mode (Crawl, URL List, or Sitemap) and target URL
 - Status (Done, Stopped, Error)
 - Pages scanned
 - Findings breakdown by severity
@@ -234,11 +246,11 @@ From any scan's detail view in History, two re-scan options appear in the metada
 
 ### ↻ Re-scan
 
-Loads the scanner form pre-filled with the exact same settings as the original scan — same mode (crawl or URL list), same URLs, same WCAG tags, and same options. You can review and adjust before starting.
+Loads the scanner form pre-filled with the exact same settings as the original scan — same mode (crawl, URL list, or sitemap), same URL(s), same WCAG tags, and same options. You can review and adjust before starting.
 
-### ↻ Re-scan URLs *(crawl scans only)*
+### ↻ Re-scan URLs *(crawl and sitemap scans only)*
 
-Converts the crawl's discovered page list into a URL list scan using the same tags and options. Useful for iterative testing — crawl once to discover all pages, then repeatedly re-scan just those specific URLs as fixes are applied, without the overhead of re-crawling each time.
+Converts the discovered page list from a crawl or sitemap scan into a URL list scan using the same tags and options. Useful for iterative testing — scan once to discover all pages (by crawling or reading the sitemap), then repeatedly re-scan just those specific URLs as fixes are applied, without the overhead of re-crawling or re-fetching the sitemap each time.
 
 After clicking either option, you are taken to the Scanner page with all fields pre-filled. A blue banner at the top confirms which scan the settings were loaded from. You can modify any setting before clicking Start scan.
 
@@ -346,21 +358,22 @@ Click **Remove** on the right side of any team member row. They will lose access
 
 ## 11. Tips and best practices
 
-### When to use Crawl vs URL list
+### When to use Crawl vs URL list vs Sitemap
 
 | Situation | Recommended mode |
 |-----------|-----------------|
-| First scan of a new client site | **Crawl** — to discover all pages |
+| First scan of a new client site, no sitemap available | **Crawl** — to discover all pages |
+| Client has a sitemap | **Sitemap** — fastest way to get complete, accurate coverage without relying on link discovery |
 | Re-testing after fixes | **URL list** (use Re-scan URLs) — faster, targets known pages |
 | Client provides a list of key pages | **URL list** |
-| Site has very deep link structure | **URL list** with sitemap from client |
+| Site has very deep link structure | **Sitemap** if one exists; otherwise **URL list** built from Google Search Console |
 | Quick spot-check of a specific page | **URL list** with a single URL |
 
 ### Getting the most out of the crawler
 
 - If the site has more pages than the default limit (50), increase **Max pages** before scanning
 - If important pages are buried deep in the site structure, increase **Max depth** beyond 3
-- Blog posts and articles are often discovered late in a crawl — if they are missing, use URL list mode with the full page list from the client's sitemap or Google Search Console
+- Blog posts and articles are often discovered late in a crawl — if they are missing, use **Sitemap** mode if the client has one, or URL list mode with the full page list from Google Search Console otherwise
 
 ### Choosing WCAG levels for a client
 
